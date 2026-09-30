@@ -1,10 +1,11 @@
 // Offline-Cache für die App-Hülle. Bei Änderungen an den Dateien VERSION erhöhen.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `gewohnheiten-${VERSION}`;
 const ASSETS = [
   './',
   'index.html',
   'style.css',
+  'tree.js',
   'app.js',
   'manifest.webmanifest',
   'icons/icon.svg',

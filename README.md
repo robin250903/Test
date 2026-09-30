@@ -7,6 +7,9 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 - **Heute-Ansicht:** Gewohnheiten abhaken, Fortschrittsring, die letzten 7 Tage nachtragen
 - **Flexible Planung:** täglich, werktags oder an beliebigen Wochentagen. Freie Tage unterbrechen keine Serie
 - **Streaks:** aktuelle und beste Serie, Meilenstein-Meldungen
+- **Lebensbaum:** Erledigte Gewohnheiten lassen einen Baum über 8 Stufen wachsen. Verpasste Tage kosten
+  Gesundheit, der Baum welkt sichtbar und geht bei 0 ein (eine Stufe zurück). Gießkannen, verdient mit
+  7 perfekten Tagen, retten einen verpassten Tag. Dazu eine Chronik und Warnungen auf „Heute“
 - **Statistik:** Quote der letzten 30 Tage und Kalender-Heatmap der letzten 17 Wochen
 - **Offline & privat:** kein Konto, kein Server, alle Daten bleiben im Browser (`localStorage`)
 - **Backup:** Export und Import als JSON-Datei
@@ -32,6 +35,7 @@ ausgeliefert werden, z. B. über GitHub Pages.
 | `index.html` | Grundgerüst, Ansichten, Dialog |
 | `style.css` | Design inkl. Dark Mode |
 | `app.js` | Datenhaltung, Streak-Berechnung, Rendering |
+| `tree.js` | Spielregeln und Zeichnung des Lebensbaums |
 | `sw.js` | Service Worker für den Offline-Betrieb |
 | `manifest.webmanifest`, `icons/` | App-Name und Icons für die Installation |
 

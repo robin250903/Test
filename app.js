@@ -185,8 +185,9 @@ function renderToday() {
     html += `<div class="section-label">Nicht geplant</div>` + other.map((h) => habitRow(h, true)).join('');
   }
   if (planned.length && doneCount === planned.length) {
-    html = `<div class="card" style="text-align:center">🎉 <b>${isToday ? 'Alles erledigt für heute!' : 'Alles erledigt an diesem Tag!'}</b></div>` + html;
+    html = `<div class="card" style="text-align:center">🎉 <b>${isToday ? 'Alles erledigt für heute! Dein Baum ist gegossen.' : 'Alles erledigt an diesem Tag!'}</b></div>` + html;
   }
+  if (isToday) html = treeBanner(treeState()) + html;
   $('#today-list').innerHTML = html;
 }
 
@@ -213,6 +214,112 @@ function renderRing(done, total) {
     </svg><span>${done}/${total}</span>`;
   $('#progress-ring').setAttribute('aria-label', `${done} von ${total} erledigt`);
   $('#progress-ring').hidden = total === 0;
+}
+
+/* ---------- Ansicht: Baum ---------- */
+
+const treeState = () => Tree.simulate(state.habits, state.log, todayKey());
+const treeSeed = () => (state.habits.length ? state.habits.map((h) => h.createdAt).sort()[0] : 'baum');
+
+function healthColor(h) {
+  if (h >= 60) return 'var(--accent)';
+  if (h >= 40) return '#84cc16';
+  if (h >= 20) return '#eab308';
+  return 'var(--danger)';
+}
+
+/** Hinweis auf der Heute-Ansicht, wenn der Baum Hilfe braucht. */
+function treeBanner(t) {
+  if (t.empty || !t.today.planned || t.today.done === t.today.planned) return '';
+  const left = t.today.planned - t.today.done;
+  const btn = `<button type="button" class="banner-link" data-tab="tree">Zum Baum</button>`;
+  if (t.tonight.dies) {
+    return `<div class="banner danger">🥀 <div><b>Dein Baum geht heute Nacht ein!</b><br>Er würde auf „${esc(Tree.STAGES[Math.max(0, t.stage - 1)].name)}“ zurückfallen. Erledige noch ${left === t.today.planned ? 'mindestens die Hälfte' : 'mehr'} deiner Gewohnheiten, um ihn zu retten. ${btn}</div></div>`;
+  }
+  if (t.tonight.usesCan) {
+    return `<div class="banner">💧 <div>Wenn du heute nichts erledigst, wird eine Gießkanne verbraucht. ${btn}</div></div>`;
+  }
+  if (t.health < 40) {
+    return `<div class="banner warn">🍂 <div><b>Dein Baum welkt</b> (${t.health} % Gesundheit). Erledige heute alles, damit er sich erholt. ${btn}</div></div>`;
+  }
+  return '';
+}
+
+function renderTree() {
+  const t = treeState();
+  $('#tree-stage-label').textContent = t.empty ? '' : `Stufe ${t.stage + 1} von ${Tree.STAGES.length} · ${t.stageName}`;
+  if (t.empty) {
+    $('#tree-content').innerHTML = `<div class="empty"><div class="big">🌰</div><p>Lege eine Gewohnheit an. Jede erledigte Gewohnheit lässt deinen Baum wachsen.</p></div>`;
+    return;
+  }
+
+  const growthText = t.nextName
+    ? `${t.growth - Tree.STAGES[t.stage].min} / ${t.nextMin - Tree.STAGES[t.stage].min} bis <b>${t.nextName}</b>`
+    : 'Höchste Stufe erreicht 🏆';
+  const cans = Array.from({ length: Tree.RULES.maxCans }, (_, i) => `<span class="can ${i < t.cans ? 'full' : ''}">💧</span>`).join('');
+  const toNextCan = Tree.RULES.canEvery - (t.perfectRun % Tree.RULES.canEvery);
+  const canText = t.cans >= Tree.RULES.maxCans
+    ? 'Vorrat voll'
+    : `Noch ${toNextCan} perfekte${toNextCan === 1 ? 'r Tag' : ' Tage'} bis zur nächsten`;
+
+  let todayText;
+  const { planned, done } = t.today;
+  if (!planned) todayText = 'Heute ist nichts geplant, dein Baum ruht sich aus.';
+  else if (done === planned) todayText = `✅ Heute alles erledigt: <b>+${Tree.RULES.perfect} Gesundheit</b>.`;
+  else if (t.tonight.dies) todayText = `🥀 <b>Achtung:</b> Bleibt es bei ${done}/${planned}, geht dein Baum heute Nacht ein.`;
+  else if (t.tonight.usesCan) todayText = `Heute noch nichts erledigt. Bleibt das so, rettet ihn eine Gießkanne.`;
+  else {
+    const d = t.tonight.delta;
+    todayText = `Heute ${done}/${planned} erledigt. Bleibt es dabei: <b>${d > 0 ? '+' : ''}${d} Gesundheit</b>. Mach alles für <b>+${Tree.RULES.perfect}</b>.`;
+  }
+
+  const dateFmt = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' });
+  const eventText = (e) => {
+    const date = dateFmt.format(parseKey(e.key));
+    switch (e.type) {
+      case 'start': return ['🌰', 'Samen gepflanzt', date];
+      case 'grew': return ['🌱', `Gewachsen: <b>${esc(e.stage)}</b>`, date];
+      case 'can': return ['💧', 'Gießkanne verdient', date];
+      case 'saved': return ['🛟', 'Gießkanne hat deinen Baum gerettet', date];
+      case 'missed': return ['🥀', `Nichts erledigt <span class="ev-delta">${e.delta} ❤️</span>`, date];
+      case 'weak': return ['🍂', `Wenig erledigt <span class="ev-delta">${e.delta} ❤️</span>`, date];
+      case 'died': return ['💀', `Eingegangen: ${esc(e.from)} → ${esc(e.to)}`, date];
+      default: return ['•', '', date];
+    }
+  };
+  const events = t.events.slice(-8).reverse().map((e) => {
+    const [icon, text, date] = eventText(e);
+    return `<li class="ev-${e.type}"><span class="ev-icon">${icon}</span><span class="ev-text">${text}</span><span class="ev-date">${date}</span></li>`;
+  }).join('');
+
+  $('#tree-content').innerHTML = `
+    <div class="card tree-card ${t.health < 20 ? 'sick' : ''}">
+      ${Tree.svg(t, treeSeed())}
+      <div class="tree-name">${esc(t.stageName)}</div>
+      <div class="tree-health-label" style="color:${healthColor(t.health)}">${Tree.healthLabel(t.health)}</div>
+    </div>
+    <div class="card">
+      <div class="bar-row"><span>❤️ Gesundheit</span><span><b>${t.health}</b> / 100</span></div>
+      <div class="bar"><i style="width:${t.health}%;background:${healthColor(t.health)}"></i></div>
+      <div class="bar-row"><span>🌿 Wachstum</span><span>${growthText}</span></div>
+      <div class="bar"><i style="width:${Math.round(t.progress * 100)}%;background:var(--accent)"></i></div>
+      <div class="bar-row cans-row"><span>Gießkannen ${cans}</span><span class="muted-sm">${canText}</span></div>
+      <p class="tree-today">${todayText}</p>
+    </div>
+    <div class="card">
+      <h2>Chronik</h2>
+      <ul class="events">${events}</ul>
+    </div>
+    <details class="card rules">
+      <summary>So funktioniert dein Baum</summary>
+      <ul>
+        <li><b>Wachstum:</b> Jede erledigte Gewohnheit bringt 1 Punkt. Nach und nach wird aus dem Samen ein uralter Baum mit Blüten und Früchten.</li>
+        <li><b>Gesundheit</b> wird jeden Abend abgerechnet: alles erledigt <b>+${Tree.RULES.perfect}</b>, mindestens die Hälfte <b>±0</b>, weniger <b>${Tree.RULES.weak}</b>, gar nichts <b>${Tree.RULES.missed}</b>.</li>
+        <li><b>Eingehen:</b> Fällt die Gesundheit auf 0, stirbt der Baum und fällt eine ganze Stufe zurück.</li>
+        <li><b>Gießkannen:</b> Für ${Tree.RULES.canEvery} perfekte Tage in Folge gibt es eine Gießkanne (max. ${Tree.RULES.maxCans}). Sie rettet dich automatisch an einem Tag, an dem du nichts geschafft hast.</li>
+        <li>Tage ohne geplante Gewohnheiten zählen nicht.</li>
+      </ul>
+    </details>`;
 }
 
 /* ---------- Ansicht: Statistik ---------- */
@@ -266,6 +373,7 @@ function renderStats() {
 
 function render() {
   if (currentView === 'today') renderToday();
+  if (currentView === 'tree') renderTree();
   if (currentView === 'stats') renderStats();
 }
 
@@ -366,14 +474,20 @@ document.addEventListener('click', (e) => {
   const tog = t.closest('[data-toggle]');
   if (tog) {
     const h = state.habits.find((x) => x.id === tog.dataset.toggle);
+    const before = treeState();
     const nowDone = toggle(h, selectedKey);
+    const after = treeState();
     if (nowDone && navigator.vibrate) navigator.vibrate(15);
     renderToday();
     if (nowDone) {
-      const btn = document.querySelector(`[data-toggle="${esc(h.id)}"]`);
+      const btn = [...document.querySelectorAll('[data-toggle]')].find((b) => b.dataset.toggle === h.id);
       btn && btn.classList.add('pop');
       const s = currentStreak(h);
-      if (selectedKey === todayKey() && s > 1 && (s % 7 === 0 || s === 3 || s === 30 || s === 100)) toast(`🔥 ${s} Tage in Folge – stark!`);
+      const isToday = selectedKey === todayKey();
+      if (after.stage > before.stage) toast(`🌳 Dein Baum ist gewachsen: ${after.stageName}!`);
+      else if (after.cans > before.cans) toast('💧 Du hast eine Gießkanne verdient!');
+      else if (isToday && after.today.planned && after.today.done === after.today.planned) toast(`💧 Baum gegossen – +${Tree.RULES.perfect} Gesundheit`);
+      else if (isToday && s > 1 && (s % 7 === 0 || s === 3 || s === 30 || s === 100)) toast(`🔥 ${s} Tage in Folge – stark!`);
     }
     return;
   }
