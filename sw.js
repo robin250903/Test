@@ -1,11 +1,14 @@
 // Offline-Cache für die App-Hülle. Bei Änderungen an den Dateien VERSION erhöhen.
-const VERSION = 'v2';
+const VERSION = 'v3';
+
+importScripts('tree.js', 'idb.js');
 const CACHE = `gewohnheiten-${VERSION}`;
 const ASSETS = [
   './',
   'index.html',
   'style.css',
   'tree.js',
+  'idb.js',
   'app.js',
   'manifest.webmanifest',
   'icons/icon.svg',
@@ -38,4 +41,39 @@ self.addEventListener('fetch', (e) => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('index.html')))
   );
+});
+
+/* ---------- Erinnerungen ---------- */
+
+const pad = (n) => String(n).padStart(2, '0');
+const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+
+// Der Push selbst enthält keine Daten: Der Text wird erst hier auf dem Gerät aus dem aktuellen Stand berechnet.
+self.addEventListener('push', (e) => {
+  e.waitUntil((async () => {
+    let msg;
+    try {
+      const s = await Mirror.get('state');
+      msg = s ? Tree.reminder(s.habits || [], s.log || {}, todayKey()) : null;
+    } catch { msg = null; }
+    msg = msg || { title: '🌳 Zeit für deine Gewohnheiten', body: 'Schau nach, wie es deinem Baum geht.' };
+    await self.registration.showNotification(msg.title, {
+      body: msg.body,
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
+      tag: 'reminder',
+      renotify: true,
+      requireInteraction: !!msg.urgent,
+    });
+  })());
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const client = all.find((c) => c.url.startsWith(self.registration.scope));
+    if (client) return client.focus();
+    return self.clients.openWindow(self.registration.scope);
+  })());
 });

@@ -10,6 +10,8 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 - **Lebensbaum:** Erledigte Gewohnheiten lassen einen Baum über 8 Stufen wachsen. Verpasste Tage kosten
   Gesundheit, der Baum welkt sichtbar und geht bei 0 ein (eine Stufe zurück). Gießkannen, verdient mit
   7 perfekten Tagen, retten einen verpassten Tag. Dazu eine Chronik und Warnungen auf „Heute“
+- **Erinnerungen:** abendliche Push-Benachrichtigung mit dem Zustand deines Baums (siehe unten)
+- **Viel Auswahl:** 18 Farben plus freie Farbwahl, rund 90 Symbole in 5 Kategorien
 - **Statistik:** Quote der letzten 30 Tage und Kalender-Heatmap der letzten 17 Wochen
 - **Offline & privat:** kein Konto, kein Server, alle Daten bleiben im Browser (`localStorage`)
 - **Backup:** Export und Import als JSON-Datei
@@ -36,7 +38,24 @@ ausgeliefert werden, z. B. über GitHub Pages.
 | `style.css` | Design inkl. Dark Mode |
 | `app.js` | Datenhaltung, Streak-Berechnung, Rendering |
 | `tree.js` | Spielregeln und Zeichnung des Lebensbaums |
-| `sw.js` | Service Worker für den Offline-Betrieb |
+| `idb.js` | Kopie der Daten in IndexedDB, damit der Service Worker sie lesen kann |
+| `sw.js` | Service Worker für Offline-Betrieb und Benachrichtigungen |
+| `scripts/send-reminder.mjs`, `.github/workflows/reminder.yml` | Stündlicher GitHub-Actions-Job, der die Erinnerung verschickt |
 | `manifest.webmanifest`, `icons/` | App-Name und Icons für die Installation |
 
 Wer Dateien ändert, sollte `VERSION` in `sw.js` erhöhen, damit installierte Apps das Update laden.
+
+## Erinnerungen
+
+Eine Web-App kann sich nicht selbst zu einer Uhrzeit wecken. Den Versand übernimmt deshalb GitHub Actions:
+
+1. In der App unter **Einstellungen → Erinnerungen** eine Uhrzeit wählen und „Erinnerungen einrichten“ tippen.
+   Die App erzeugt ein eigenes Schlüsselpaar (VAPID) und meldet sich beim Push-Dienst des Browsers an.
+2. Den angezeigten Code als Repository-Secret `PUSH_CONFIG` speichern (Settings → Secrets and variables → Actions).
+3. Der Workflow `Erinnerung` läuft stündlich und verschickt zur eingestellten Stunde einen leeren Push.
+   Der Text wird erst auf dem Gerät im Service Worker aus den lokalen Daten berechnet, deine Gewohnheiten
+   verlassen das Handy also nie.
+
+Hinweise: Auf iPhone/iPad funktioniert das nur mit der App auf dem Home-Bildschirm (ab iOS 16.4).
+Geplante Workflows laufen nur auf dem Standard-Branch und können sich bei GitHub um einige Minuten verspäten.
+In öffentlichen Repos pausiert GitHub sie nach 60 Tagen ohne Aktivität im Repo; dann unter „Actions“ wieder aktivieren.

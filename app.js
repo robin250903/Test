@@ -1,8 +1,19 @@
 'use strict';
 
 const STORAGE_KEY = 'habits.v1';
-const COLORS = ['#16a34a', '#2563eb', '#9333ea', '#ea580c', '#dc2626', '#0d9488', '#ca8a04', '#db2777'];
-const EMOJIS = ['💧', '🏃', '📚', '🧘', '🦷', '💪', '🥗', '😴', '✍️', '🚶', '💊', '🎸', '🧹', '📵'];
+const COLORS = [
+  '#16a34a', '#65a30d', '#0d9488', '#0891b2', '#0284c7', '#2563eb', '#4f46e5', '#7c3aed', '#9333ea',
+  '#c026d3', '#db2777', '#e11d48', '#dc2626', '#ea580c', '#d97706', '#ca8a04', '#78716c', '#475569',
+];
+const EMOJI_GROUPS = [
+  ['Gesundheit', '💧 🥗 🍎 🥦 🥑 🍵 ☕ 😴 🛏️ 💊 🦷 🧴 🚭 🍷 🍬 🥤 🩺 ☀️'],
+  ['Sport', '🏃 🚶 💪 🏋️ 🧘 🚴 🏊 ⚽ 🏀 🎾 🥾 🤸 🧗 🥊 🛹 ⛷️ 🏓 🤾'],
+  ['Geist', '📚 📖 ✍️ 📓 🧠 🙏 🌅 😊 🫶 🧩 ♟️ 🎧 🌿 🕯️ 💭 🎯 🌙 🌈'],
+  ['Lernen', '💻 🎓 🗣️ 🌍 🧮 📝 📅 ⏰ 💼 📊 🔬 🎸 🎹 🎨 📷 🎤 🧑‍💻 ✏️'],
+  ['Zuhause', '🧹 🧺 🍳 🪴 🐶 🐱 🛒 🗑️ 🧽 🛁 🧼 🔧 💸 💰 📵 📞 👨‍👩‍👧 ❤️'],
+].map(([name, list]) => ({ name, emojis: list.split(' ') }));
+const HEX = /^#[0-9a-f]{6}$/i;
+let emojiGroup = 0;
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const SUGGESTIONS = [
@@ -39,6 +50,13 @@ function save() {
   } catch {
     toast('Speichern fehlgeschlagen. Ist der Speicher voll oder privat?');
   }
+  mirror();
+}
+
+/** Kopie für den Service Worker, damit Erinnerungen den aktuellen Stand kennen. */
+function mirror() {
+  if (typeof indexedDB === 'undefined') return;
+  Mirror.put('state', state).catch(() => {});
 }
 
 let state = load();
@@ -375,6 +393,7 @@ function render() {
   if (currentView === 'today') renderToday();
   if (currentView === 'tree') renderTree();
   if (currentView === 'stats') renderStats();
+  if (currentView === 'settings') renderReminder();
 }
 
 function showView(name) {
@@ -394,6 +413,9 @@ let draft = null;
 
 function openDialog(habit, preset) {
   editingId = habit ? habit.id : null;
+  const presetEmoji = (habit || preset || {}).emoji;
+  const found = EMOJI_GROUPS.findIndex((g) => g.emojis.includes(presetEmoji));
+  emojiGroup = found >= 0 ? found : 0;
   draft = habit
     ? { ...habit, days: [...habit.days] }
     : { name: '', emoji: '✅', color: COLORS[state.habits.length % COLORS.length], days: [...ALL_DAYS], ...preset };
@@ -407,14 +429,36 @@ function openDialog(habit, preset) {
 }
 
 function renderDialogPickers() {
-  $('#emoji-picks').innerHTML = EMOJIS.map((e) => `<button type="button" data-emoji="${e}" aria-label="Symbol ${e}">${e}</button>`).join('');
-  $('#swatches').innerHTML = COLORS.map((c) => `<button type="button" data-color="${c}" style="--c:${c}" aria-label="Farbe ${c}" aria-pressed="${c === draft.color}"></button>`).join('');
+  const current = $('#f-emoji').value;
+  $('#emoji-tabs').innerHTML = EMOJI_GROUPS.map((g, i) => `<button type="button" data-egroup="${i}" aria-pressed="${i === emojiGroup}">${g.name}</button>`).join('');
+  $('#emoji-picks').innerHTML = EMOJI_GROUPS[emojiGroup].emojis.map((e) => `<button type="button" data-emoji="${e}" aria-label="Symbol ${e}" aria-pressed="${e === current}">${e}</button>`).join('');
+  const custom = !COLORS.includes(draft.color);
+  $('#swatches').innerHTML = COLORS.map((c) => `<button type="button" data-color="${c}" style="--c:${c}" aria-label="Farbe ${c}" aria-pressed="${c === draft.color}"></button>`).join('')
+    + `<label class="custom-color" style="--c:${custom ? draft.color : 'transparent'}" aria-pressed="${custom}" title="Eigene Farbe">
+        <input type="color" id="f-color" value="${custom ? draft.color : '#16a34a'}" aria-label="Eigene Farbe wählen"><span aria-hidden="true">${custom ? '' : '+'}</span></label>`;
   $('#day-toggles').innerHTML = WEEKDAYS.map((w, i) => `<button type="button" data-dayt="${i}" aria-pressed="${draft.days.includes(i)}">${w}</button>`).join('');
 }
 
 $('#emoji-picks').addEventListener('click', (e) => {
   const b = e.target.closest('[data-emoji]');
-  if (b) $('#f-emoji').value = b.dataset.emoji;
+  if (!b) return;
+  $('#f-emoji').value = b.dataset.emoji;
+  renderDialogPickers();
+});
+$('#emoji-tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-egroup]');
+  if (!b) return;
+  emojiGroup = Number(b.dataset.egroup);
+  renderDialogPickers();
+});
+$('#swatches').addEventListener('input', (e) => {
+  if (e.target.id !== 'f-color' || !HEX.test(e.target.value)) return;
+  draft.color = e.target.value;
+  const label = e.target.closest('.custom-color');
+  label.style.setProperty('--c', draft.color);
+  label.setAttribute('aria-pressed', 'true');
+  label.querySelector('span').textContent = '';
+  document.querySelectorAll('#swatches [data-color]').forEach((b) => b.setAttribute('aria-pressed', 'false'));
 });
 $('#swatches').addEventListener('click', (e) => {
   const b = e.target.closest('[data-color]');
@@ -501,6 +545,168 @@ document.addEventListener('click', (e) => {
 
 $('#btn-add').addEventListener('click', () => openDialog(null));
 
+/* ---------- Erinnerungen ---------- */
+
+const REMINDER_KEY = 'reminder.v1';
+const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const fromB64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+
+function loadReminder() {
+  try { return JSON.parse(localStorage.getItem(REMINDER_KEY)); } catch { return null; }
+}
+function saveReminder(cfg) {
+  try {
+    if (cfg) localStorage.setItem(REMINDER_KEY, JSON.stringify(cfg));
+    else localStorage.removeItem(REMINDER_KEY);
+  } catch { /* ignorieren */ }
+}
+
+/** Owner/Repo aus der GitHub-Pages-Adresse ableiten (z. B. name.github.io/Repo/). */
+function repoInfo() {
+  const m = location.hostname.match(/^([^.]+)\.github\.io$/);
+  const repo = location.pathname.split('/').filter(Boolean)[0];
+  return m && repo ? { owner: m[1], repo } : null;
+}
+
+function reminderSupport() {
+  if (!('serviceWorker' in navigator) || !('Notification' in window)) return 'none';
+  if (!('PushManager' in window)) {
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    return ios ? 'ios-install' : 'none';
+  }
+  return 'ok';
+}
+
+const hourOptions = (sel) => Array.from({ length: 17 }, (_, i) => i + 7)
+  .map((h) => `<option value="${h}" ${h === sel ? 'selected' : ''}>${h}:00 Uhr</option>`).join('');
+
+/** Das, was als GitHub-Secret gespeichert wird: Abo + Schlüssel + Uhrzeit. */
+function reminderCode(cfg) {
+  return JSON.stringify({ v: 1, hour: cfg.hour, timezone: cfg.timezone, subscription: cfg.subscription, vapid: cfg.vapid });
+}
+
+function renderReminder() {
+  const el = $('#reminder-body');
+  const support = reminderSupport();
+  if (support === 'ios-install') {
+    el.innerHTML = `<p class="muted">Auf iPhone und iPad funktionieren Benachrichtigungen nur, wenn du die App <b>vom Home-Bildschirm</b> aus öffnest (ab iOS 16.4). Leg sie dort ab (siehe unten) und öffne sie dann von dort.</p>`;
+    return;
+  }
+  if (support === 'none') {
+    el.innerHTML = `<p class="muted">Dieser Browser unterstützt leider keine Benachrichtigungen für Web-Apps.</p>`;
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    el.innerHTML = `<p class="muted">Benachrichtigungen sind blockiert. Erlaube sie in den Einstellungen deines Handys für diese App (iPhone: Einstellungen → Mitteilungen → Gewohnheiten).</p>`;
+    return;
+  }
+
+  const cfg = loadReminder();
+  if (!cfg) {
+    el.innerHTML = `<label class="field"><span>Uhrzeit</span><select id="reminder-hour">${hourOptions(19)}</select></label>
+      <button class="btn" type="button" id="btn-reminder-setup">Erinnerungen einrichten</button>`;
+    return;
+  }
+
+  const info = repoInfo();
+  const secretLink = info
+    ? `<a href="https://github.com/${encodeURIComponent(info.owner)}/${encodeURIComponent(info.repo)}/settings/secrets/actions/new" target="_blank" rel="noopener">GitHub → Secrets</a>`
+    : 'die Secrets-Seite deines GitHub-Repos (Settings → Secrets and variables → Actions)';
+  const actionsLink = info
+    ? `<a href="https://github.com/${encodeURIComponent(info.owner)}/${encodeURIComponent(info.repo)}/actions/workflows/reminder.yml" target="_blank" rel="noopener">GitHub → Actions → Erinnerung</a>`
+    : 'GitHub → Actions → Erinnerung';
+  el.innerHTML = `
+    <label class="field"><span>Uhrzeit</span><select id="reminder-hour">${hourOptions(cfg.hour)}</select></label>
+    <ol class="steps">
+      <li><button class="btn btn-small" type="button" id="btn-reminder-copy">Code kopieren</button></li>
+      <li>Öffne ${secretLink}. Name: <code>PUSH_CONFIG</code>, als Wert den Code einfügen, dann <b>Add secret</b>. Gibt es das Secret schon, bearbeite es stattdessen.</li>
+      <li>Testen: ${actionsLink} → <b>Run workflow</b>. Nach ca. 30 Sekunden sollte die Benachrichtigung ankommen.</li>
+    </ol>
+    <details class="code-box"><summary>Code anzeigen</summary><textarea readonly id="reminder-code" rows="5">${esc(reminderCode(cfg))}</textarea></details>
+    <p class="muted small">Der Code enthält einen geheimen Schlüssel für deine Benachrichtigungen. Speichere ihn nur als GitHub-Secret und teile ihn mit niemandem. Deine Gewohnheiten stehen nicht darin.</p>
+    <div class="row">
+      <button class="btn btn-ghost" type="button" id="btn-reminder-test">Vorschau auf diesem Gerät</button>
+      <button class="btn btn-ghost btn-danger" type="button" id="btn-reminder-off">Deaktivieren</button>
+    </div>`;
+}
+
+async function setupReminder() {
+  const hour = Number($('#reminder-hour').value);
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { renderReminder(); return toast('Ohne Erlaubnis gehen keine Benachrichtigungen.'); }
+    const reg = await navigator.serviceWorker.ready;
+
+    // Eigenes Schlüsselpaar (VAPID): Der öffentliche Teil geht an den Push-Dienst, der private ins GitHub-Secret
+    const keys = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+    const publicKey = b64url(await crypto.subtle.exportKey('raw', keys.publicKey));
+    const privateKey = (await crypto.subtle.exportKey('jwk', keys.privateKey)).d;
+
+    const old = await reg.pushManager.getSubscription();
+    if (old) await old.unsubscribe();
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64url(publicKey) });
+
+    saveReminder({
+      hour,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin',
+      subscription: sub.toJSON(),
+      vapid: { publicKey, privateKey },
+    });
+    renderReminder();
+    toast('Fast fertig: Jetzt den Code bei GitHub hinterlegen');
+  } catch (err) {
+    console.error(err);
+    toast('Einrichten fehlgeschlagen. Ist die App vom Home-Bildschirm geöffnet?');
+  }
+}
+
+async function showPreview() {
+  const reg = await navigator.serviceWorker.ready;
+  const msg = Tree.reminder(state.habits, state.log, todayKey());
+  await reg.showNotification(msg.title, { body: msg.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'reminder' });
+}
+
+async function disableReminder() {
+  if (!confirm('Erinnerungen deaktivieren? Du kannst danach auch das Secret PUSH_CONFIG bei GitHub löschen.')) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) await sub.unsubscribe();
+  } catch { /* egal */ }
+  saveReminder(null);
+  renderReminder();
+  toast('Erinnerungen deaktiviert');
+}
+
+$('#reminder-body').addEventListener('click', async (e) => {
+  const id = e.target.closest('button')?.id;
+  if (id === 'btn-reminder-setup') setupReminder();
+  if (id === 'btn-reminder-test') showPreview().catch(() => toast('Vorschau nicht möglich'));
+  if (id === 'btn-reminder-off') disableReminder();
+  if (id === 'btn-reminder-copy') {
+    const code = reminderCode(loadReminder());
+    try {
+      await navigator.clipboard.writeText(code);
+      toast('Code kopiert');
+    } catch {
+      const box = $('.code-box');
+      box.open = true;
+      $('#reminder-code').select();
+      toast('Bitte den Code manuell kopieren');
+    }
+  }
+});
+
+$('#reminder-body').addEventListener('change', (e) => {
+  if (e.target.id !== 'reminder-hour') return;
+  const cfg = loadReminder();
+  if (!cfg) return;
+  cfg.hour = Number(e.target.value);
+  saveReminder(cfg);
+  renderReminder();
+  toast('Uhrzeit geändert: Code neu kopieren und das Secret bei GitHub aktualisieren');
+});
+
 /* ---------- Einstellungen ---------- */
 
 $('#btn-export').addEventListener('click', () => {
@@ -523,7 +729,7 @@ $('#input-import').addEventListener('change', async (e) => {
     if (!valid) throw new Error('format');
     if (state.habits.length && !confirm('Das Backup ersetzt deine aktuellen Daten. Fortfahren?')) return;
     state = {
-      habits: data.habits.map((h) => ({ ...h, color: COLORS.includes(h.color) ? h.color : COLORS[0], emoji: String(h.emoji || '✅') })),
+      habits: data.habits.map((h) => ({ ...h, color: HEX.test(h.color) ? h.color : COLORS[0], emoji: String(h.emoji || '✅') })),
       log: data.log || {},
     };
     save();
@@ -571,10 +777,11 @@ setInterval(checkDayChange, 60 * 1000);
 
 // Änderungen aus einem anderen Tab übernehmen
 window.addEventListener('storage', (e) => {
-  if (e.key === STORAGE_KEY) { state = load(); render(); }
+  if (e.key === STORAGE_KEY) { state = load(); mirror(); render(); }
 });
 
 showView('today');
+mirror();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});

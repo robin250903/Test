@@ -1,0 +1,41 @@
+name: Erinnerung
+
+# Läuft stündlich; das Skript prüft selbst, ob gerade die eingestellte Uhrzeit ist.
+# Über "Run workflow" lässt sich sofort eine Test-Erinnerung schicken.
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reminder
+  cancel-in-progress: false
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+
+      - name: Uhrzeit prüfen
+        id: check
+        run: node scripts/send-reminder.mjs check
+        env:
+          PUSH_CONFIG: ${{ secrets.PUSH_CONFIG }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: web-push installieren
+        if: steps.check.outputs.send == 'true'
+        run: npm install --no-save --no-audit --no-fund --prefix scripts web-push@3.6.7
+
+      - name: Erinnerung senden
+        if: steps.check.outputs.send == 'true'
+        run: node scripts/send-reminder.mjs send
+        env:
+          PUSH_CONFIG: ${{ secrets.PUSH_CONFIG }}

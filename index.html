@@ -47,6 +47,11 @@
     <section id="view-settings" class="view" data-view="settings" hidden>
       <header class="top"><h1>Einstellungen</h1></header>
       <div class="card settings">
+        <h2>🔔 Erinnerungen</h2>
+        <p class="muted">Jeden Abend eine Benachrichtigung, wie es deinem Baum geht und was noch offen ist.</p>
+        <div id="reminder-body"></div>
+      </div>
+      <div class="card settings">
         <h2>Daten sichern</h2>
         <p class="muted">Deine Daten liegen nur auf diesem Gerät. Exportiere regelmäßig ein Backup, bevor du den Browser-Speicher löschst oder das Handy wechselst.</p>
         <div class="row">
@@ -102,9 +107,10 @@
       <div class="field">
         <span>Symbol</span>
         <div class="emoji-row">
-          <input name="emoji" id="f-emoji" maxlength="4" autocomplete="off" aria-label="Eigenes Emoji">
-          <div class="emoji-picks" id="emoji-picks"></div>
+          <input name="emoji" id="f-emoji" maxlength="8" autocomplete="off" aria-label="Eigenes Emoji">
+          <div class="emoji-tabs" id="emoji-tabs"></div>
         </div>
+        <div class="emoji-picks" id="emoji-picks"></div>
       </div>
       <div class="field">
         <span>Farbe</span>
@@ -125,6 +131,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="tree.js"></script>
+  <script src="idb.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

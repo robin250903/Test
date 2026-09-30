@@ -259,7 +259,30 @@ const Tree = (() => {
     </svg>`;
   }
 
-  return { STAGES, RULES, simulate, svg, healthLabel };
+  /** Text für die abendliche Erinnerung, passend zum Zustand des Baums. */
+  function reminder(habits, log, todayK) {
+    const t = simulate(habits, log, todayK);
+    const { planned, done } = t.today;
+    const open = habits.filter((h) => h.days.includes(weekdayIdx(parseKey(todayK))) && !(log[h.id] && log[h.id][todayK]));
+    const names = open.slice(0, 3).map((h) => `${h.emoji} ${h.name}`).join(', ') + (open.length > 3 ? ' …' : '');
+    const left = planned - done;
+
+    if (t.empty) return { title: '🌰 Pflanz deinen Baum', body: 'Leg deine erste Gewohnheit an, damit dein Baum wachsen kann.', urgent: false };
+    if (!planned) return { title: '🌳 Ruhetag', body: 'Heute ist nichts geplant. Dein Baum ruht sich aus.', urgent: false };
+    if (done === planned) return { title: '🌳 Alles erledigt!', body: `Dein Baum ist heute gegossen (${t.stageName}, ${t.health} % Gesundheit). Stark!`, urgent: false };
+    if (t.tonight.dies) {
+      return { title: '🥀 Dein Baum geht heute Nacht ein!', body: `Noch ${left} von ${planned} offen: ${names}. Erledige mindestens die Hälfte, um ihn zu retten.`, urgent: true };
+    }
+    if (t.tonight.usesCan) {
+      return { title: '💧 Heute noch nichts gemacht', body: `Sonst wird eine Gießkanne verbraucht. Offen: ${names}`, urgent: false };
+    }
+    if (t.tonight.delta < 0) {
+      return { title: '🍂 Dein Baum hat Durst', body: `Noch ${left} offen: ${names}. Sonst ${t.tonight.delta} Gesundheit.`, urgent: true };
+    }
+    return { title: '🌿 Fast geschafft', body: `Noch ${left} offen für +${RULES.perfect} Gesundheit: ${names}`, urgent: false };
+  }
+
+  return { STAGES, RULES, simulate, svg, healthLabel, reminder };
 })();
 
 if (typeof module !== 'undefined') module.exports = Tree;
