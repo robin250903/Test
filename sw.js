@@ -1,5 +1,5 @@
 // Offline-Cache für die App-Hülle. Bei Änderungen an den Dateien VERSION erhöhen.
-const VERSION = 'v3';
+const VERSION = 'v4';
 
 importScripts('tree.js', 'idb.js');
 const CACHE = `gewohnheiten-${VERSION}`;
@@ -50,11 +50,13 @@ const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${pad(
 
 // Der Push selbst enthält keine Daten: Der Text wird erst hier auf dem Gerät aus dem aktuellen Stand berechnet.
 self.addEventListener('push', (e) => {
+  let slot = 'evening';
+  try { slot = e.data?.json()?.slot === 'morning' ? 'morning' : 'evening'; } catch { /* leerer Push */ }
   e.waitUntil((async () => {
     let msg;
     try {
       const s = await Mirror.get('state');
-      msg = s ? Tree.reminder(s.habits || [], s.log || {}, todayKey()) : null;
+      msg = s ? Tree.reminder(s.habits || [], s.log || {}, todayKey(), slot) : null;
     } catch { msg = null; }
     msg = msg || { title: '🌳 Zeit für deine Gewohnheiten', body: 'Schau nach, wie es deinem Baum geht.' };
     await self.registration.showNotification(msg.title, {

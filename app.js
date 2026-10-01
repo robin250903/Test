@@ -160,26 +160,28 @@ const tageWort = (n) => (n === 1 ? 'Tag' : 'Tage');
 
 /* ---------- Ansicht: Heute ---------- */
 
+/** Bis zu dieser Uhrzeit darf der Vortag noch nachgetragen werden. */
+const BACKFILL_UNTIL_HOUR = 12;
+const yesterdayKey = () => keyOf(addDays(parseKey(todayKey()), -1));
+const canBackfill = () => new Date().getHours() < BACKFILL_UNTIL_HOUR;
+
+/** Hat gestern etwas offen gelassen, das man noch nachtragen könnte? */
+function yesterdayIncomplete() {
+  const y = parseKey(yesterdayKey());
+  const planned = state.habits.filter((h) => isScheduled(h, y) && startOf(h) <= y);
+  return planned.some((h) => !isDone(h, yesterdayKey()));
+}
+
 function renderToday() {
+  // Nachtragen ist nur für gestern und nur bis mittags möglich
+  if (selectedKey !== todayKey() && (selectedKey !== yesterdayKey() || !canBackfill())) selectedKey = todayKey();
   const sel = parseKey(selectedKey);
   const isToday = selectedKey === todayKey();
   const dateFmt = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'long' });
-  $('#today-weekday').textContent = new Intl.DateTimeFormat('de-DE', { weekday: 'long' }).format(sel);
-  $('#today-title').textContent = isToday ? 'Heute' : dateFmt.format(sel);
-
-  // Wochenleiste: die letzten 7 Tage bis heute
-  const today = parseKey(todayKey());
-  let strip = '';
-  for (let i = 6; i >= 0; i--) {
-    const d = addDays(today, -i);
-    const k = keyOf(d);
-    const planned = state.habits.filter((h) => isScheduled(h, d) && startOf(h) <= d);
-    const done = planned.filter((h) => isDone(h, k)).length;
-    const dot = planned.length && done === planned.length ? 'full' : done ? 'partial' : '';
-    strip += `<button type="button" data-day="${k}" class="${k === selectedKey ? 'sel' : ''}" aria-pressed="${k === selectedKey}">
-      <span class="wd">${WEEKDAYS[weekdayIdx(d)]}</span><span class="dn">${d.getDate()}</span><span class="dot ${dot}"></span></button>`;
-  }
-  $('#week-strip').innerHTML = strip;
+  $('#today-weekday').textContent = isToday
+    ? new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).format(sel)
+    : `Nachtragen · ${dateFmt.format(sel)}`;
+  $('#today-title').textContent = isToday ? 'Heute' : 'Gestern';
 
   const planned = state.habits.filter((h) => isScheduled(h, sel));
   const other = state.habits.filter((h) => !isScheduled(h, sel));
@@ -205,7 +207,14 @@ function renderToday() {
   if (planned.length && doneCount === planned.length) {
     html = `<div class="card" style="text-align:center">🎉 <b>${isToday ? 'Alles erledigt für heute! Dein Baum ist gegossen.' : 'Alles erledigt an diesem Tag!'}</b></div>` + html;
   }
-  if (isToday) html = treeBanner(treeState()) + html;
+  if (isToday) {
+    html = treeBanner(treeState()) + html;
+    if (canBackfill() && yesterdayIncomplete()) {
+      html += `<button type="button" class="link-btn" data-backfill="yes">Gestern vergessen einzutragen? Noch bis ${BACKFILL_UNTIL_HOUR} Uhr möglich</button>`;
+    }
+  } else {
+    html = `<div class="banner">✏️ <div>Du trägst für <b>gestern</b> nach. Dein Baum wird automatisch neu berechnet. <button type="button" class="banner-link" data-backfill="no">Zurück zu heute</button></div></div>` + html;
+  }
   $('#today-list').innerHTML = html;
 }
 
@@ -252,7 +261,7 @@ function treeBanner(t) {
   const left = t.today.planned - t.today.done;
   const btn = `<button type="button" class="banner-link" data-tab="tree">Zum Baum</button>`;
   if (t.tonight.dies) {
-    return `<div class="banner danger">🥀 <div><b>Dein Baum geht heute Nacht ein!</b><br>Er würde auf „${esc(Tree.STAGES[Math.max(0, t.stage - 1)].name)}“ zurückfallen. Erledige noch ${left === t.today.planned ? 'mindestens die Hälfte' : 'mehr'} deiner Gewohnheiten, um ihn zu retten. ${btn}</div></div>`;
+    return `<div class="banner danger">🥀 <div><b>Dein Baum geht heute Nacht ein!</b><br>Er würde auf „${esc(Tree.STAGES[Math.max(0, t.stage - 1)].name)}“ zurückfallen. ${(() => { const n = Tree.neededToSurvive(t); return n === 1 ? 'Schon 1 weitere Gewohnheit rettet ihn.' : `${n} weitere Gewohnheiten retten ihn.`; })()} ${btn}</div></div>`;
   }
   if (t.tonight.usesCan) {
     return `<div class="banner">💧 <div>Wenn du heute nichts erledigst, wird eine Gießkanne verbraucht. ${btn}</div></div>`;
@@ -285,10 +294,11 @@ function renderTree() {
   if (!planned) todayText = 'Heute ist nichts geplant, dein Baum ruht sich aus.';
   else if (done === planned) todayText = `✅ Heute alles erledigt: <b>+${Tree.RULES.perfect} Gesundheit</b>.`;
   else if (t.tonight.dies) todayText = `🥀 <b>Achtung:</b> Bleibt es bei ${done}/${planned}, geht dein Baum heute Nacht ein.`;
-  else if (t.tonight.usesCan) todayText = `Heute noch nichts erledigt. Bleibt das so, rettet ihn eine Gießkanne.`;
+  else if (t.tonight.usesCan) todayText = `Heute ${done}/${planned} erledigt. Unter 50 % wird heute Nacht eine Gießkanne verbraucht.`;
   else {
     const d = t.tonight.delta;
-    todayText = `Heute ${done}/${planned} erledigt. Bleibt es dabei: <b>${d > 0 ? '+' : ''}${d} Gesundheit</b>. Mach alles für <b>+${Tree.RULES.perfect}</b>.`;
+    const gain = Tree.deltaFor((done + 1) / planned) - d;
+    todayText = `Heute ${done}/${planned} erledigt. Stand jetzt: <b>${d > 0 ? '+' : ''}${d} Gesundheit</b>. Die nächste Gewohnheit bringt <b>+${gain}</b>, alles <b>+${Tree.RULES.perfect}</b>.`;
   }
 
   const dateFmt = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' });
@@ -300,7 +310,7 @@ function renderTree() {
       case 'can': return ['💧', 'Gießkanne verdient', date];
       case 'saved': return ['🛟', 'Gießkanne hat deinen Baum gerettet', date];
       case 'missed': return ['🥀', `Nichts erledigt <span class="ev-delta">${e.delta} ❤️</span>`, date];
-      case 'weak': return ['🍂', `Wenig erledigt <span class="ev-delta">${e.delta} ❤️</span>`, date];
+      case 'weak': return ['🍂', `${e.pct ?? '?'} % erledigt <span class="ev-delta">${e.delta} ❤️</span>`, date];
       case 'died': return ['💀', `Eingegangen: ${esc(e.from)} → ${esc(e.to)}`, date];
       default: return ['•', '', date];
     }
@@ -332,9 +342,10 @@ function renderTree() {
       <summary>So funktioniert dein Baum</summary>
       <ul>
         <li><b>Wachstum:</b> Jede erledigte Gewohnheit bringt 1 Punkt. Nach und nach wird aus dem Samen ein uralter Baum mit Blüten und Früchten.</li>
-        <li><b>Gesundheit</b> wird jeden Abend abgerechnet: alles erledigt <b>+${Tree.RULES.perfect}</b>, mindestens die Hälfte <b>±0</b>, weniger <b>${Tree.RULES.weak}</b>, gar nichts <b>${Tree.RULES.missed}</b>.</li>
+        <li><b>Gesundheit</b> wird jeden Abend abgerechnet, je nachdem wie viel du geschafft hast. Jede zusätzliche Gewohnheit zählt:
+          <table class="curve">${[0, 25, 50, 70, 85, 100].map((p) => { const d = Tree.deltaFor(p / 100); return `<tr><td>${p} %</td><td class="${d < 0 ? 'neg' : d > 0 ? 'pos' : ''}">${d > 0 ? '+' : d === 0 ? '±' : ''}${d}</td></tr>`; }).join('')}</table></li>
         <li><b>Eingehen:</b> Fällt die Gesundheit auf 0, stirbt der Baum und fällt eine ganze Stufe zurück.</li>
-        <li><b>Gießkannen:</b> Für ${Tree.RULES.canEvery} perfekte Tage in Folge gibt es eine Gießkanne (max. ${Tree.RULES.maxCans}). Sie rettet dich automatisch an einem Tag, an dem du nichts geschafft hast.</li>
+        <li><b>Gießkannen:</b> Für ${Tree.RULES.canEvery} perfekte Tage in Folge gibt es eine Gießkanne (max. ${Tree.RULES.maxCans}). Sie rettet dich automatisch an einem Tag, an dem du unter 50 % bleibst.</li>
         <li>Tage ohne geplante Gewohnheiten zählen nicht.</li>
       </ul>
     </details>`;
@@ -512,8 +523,8 @@ document.addEventListener('click', (e) => {
   const tab = t.closest('[data-tab]');
   if (tab) return showView(tab.dataset.tab);
 
-  const day = t.closest('[data-day]');
-  if (day) { selectedKey = day.dataset.day; return renderToday(); }
+  const bf = t.closest('[data-backfill]');
+  if (bf) { selectedKey = bf.dataset.backfill === 'yes' ? yesterdayKey() : todayKey(); window.scrollTo(0, 0); return renderToday(); }
 
   const tog = t.closest('[data-toggle]');
   if (tog) {
@@ -552,7 +563,14 @@ const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replac
 const fromB64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 
 function loadReminder() {
-  try { return JSON.parse(localStorage.getItem(REMINDER_KEY)); } catch { return null; }
+  let cfg;
+  try { cfg = JSON.parse(localStorage.getItem(REMINDER_KEY)); } catch { return null; }
+  // Alte Version mit nur einer Uhrzeit -> abends
+  if (cfg && cfg.evening === undefined && cfg.morning === undefined) {
+    cfg = { ...cfg, morning: null, evening: cfg.hour ?? 19 };
+    delete cfg.hour;
+  }
+  return cfg;
 }
 function saveReminder(cfg) {
   try {
@@ -577,12 +595,29 @@ function reminderSupport() {
   return 'ok';
 }
 
-const hourOptions = (sel) => Array.from({ length: 17 }, (_, i) => i + 7)
-  .map((h) => `<option value="${h}" ${h === sel ? 'selected' : ''}>${h}:00 Uhr</option>`).join('');
+const SLOTS = {
+  morning: { label: '☀️ Morgens', hours: [5, 6, 7, 8, 9, 10, 11, 12], fallback: 8 },
+  evening: { label: '🌙 Abends', hours: [15, 16, 17, 18, 19, 20, 21, 22, 23], fallback: 20 },
+};
 
-/** Das, was als GitHub-Secret gespeichert wird: Abo + Schlüssel + Uhrzeit. */
+function timeSelects(cfg) {
+  return Object.entries(SLOTS).map(([slot, def]) => {
+    const sel = cfg ? cfg[slot] : def.fallback;
+    const opts = `<option value="" ${sel == null ? 'selected' : ''}>Aus</option>`
+      + def.hours.map((h) => `<option value="${h}" ${h === sel ? 'selected' : ''}>${h}:00 Uhr</option>`).join('');
+    return `<label class="field"><span>${def.label}</span><select data-slot="${slot}">${opts}</select></label>`;
+  }).join('');
+}
+
+function readSelects() {
+  const out = {};
+  document.querySelectorAll('#reminder-body select[data-slot]').forEach((el) => { out[el.dataset.slot] = el.value === '' ? null : Number(el.value); });
+  return out;
+}
+
+/** Das, was als GitHub-Secret gespeichert wird: Abo + Schlüssel + Uhrzeiten. */
 function reminderCode(cfg) {
-  return JSON.stringify({ v: 1, hour: cfg.hour, timezone: cfg.timezone, subscription: cfg.subscription, vapid: cfg.vapid });
+  return JSON.stringify({ v: 2, morning: cfg.morning, evening: cfg.evening, timezone: cfg.timezone, subscription: cfg.subscription, vapid: cfg.vapid });
 }
 
 function renderReminder() {
@@ -603,7 +638,7 @@ function renderReminder() {
 
   const cfg = loadReminder();
   if (!cfg) {
-    el.innerHTML = `<label class="field"><span>Uhrzeit</span><select id="reminder-hour">${hourOptions(19)}</select></label>
+    el.innerHTML = `<div class="time-grid">${timeSelects(null)}</div>
       <button class="btn" type="button" id="btn-reminder-setup">Erinnerungen einrichten</button>`;
     return;
   }
@@ -616,7 +651,8 @@ function renderReminder() {
     ? `<a href="https://github.com/${encodeURIComponent(info.owner)}/${encodeURIComponent(info.repo)}/actions/workflows/reminder.yml" target="_blank" rel="noopener">GitHub → Actions → Erinnerung</a>`
     : 'GitHub → Actions → Erinnerung';
   el.innerHTML = `
-    <label class="field"><span>Uhrzeit</span><select id="reminder-hour">${hourOptions(cfg.hour)}</select></label>
+    <div class="time-grid">${timeSelects(cfg)}</div>
+    ${cfg.dirty ? `<div class="banner warn">⚠️ <div>Die Uhrzeiten wurden geändert. Kopiere den Code neu und <b>aktualisiere das Secret</b> <code>PUSH_CONFIG</code> bei GitHub, sonst gelten noch die alten Zeiten.</div></div>` : ''}
     <ol class="steps">
       <li><button class="btn btn-small" type="button" id="btn-reminder-copy">Code kopieren</button></li>
       <li>Öffne ${secretLink}. Name: <code>PUSH_CONFIG</code>, als Wert den Code einfügen, dann <b>Add secret</b>. Gibt es das Secret schon, bearbeite es stattdessen.</li>
@@ -625,13 +661,15 @@ function renderReminder() {
     <details class="code-box"><summary>Code anzeigen</summary><textarea readonly id="reminder-code" rows="5">${esc(reminderCode(cfg))}</textarea></details>
     <p class="muted small">Der Code enthält einen geheimen Schlüssel für deine Benachrichtigungen. Speichere ihn nur als GitHub-Secret und teile ihn mit niemandem. Deine Gewohnheiten stehen nicht darin.</p>
     <div class="row">
-      <button class="btn btn-ghost" type="button" id="btn-reminder-test">Vorschau auf diesem Gerät</button>
+      <button class="btn btn-ghost" type="button" data-preview="morning">Vorschau morgens</button>
+      <button class="btn btn-ghost" type="button" data-preview="evening">Vorschau abends</button>
       <button class="btn btn-ghost btn-danger" type="button" id="btn-reminder-off">Deaktivieren</button>
     </div>`;
 }
 
 async function setupReminder() {
-  const hour = Number($('#reminder-hour').value);
+  const times = readSelects();
+  if (times.morning == null && times.evening == null) return toast('Wähle mindestens eine Uhrzeit.');
   try {
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') { renderReminder(); return toast('Ohne Erlaubnis gehen keine Benachrichtigungen.'); }
@@ -647,7 +685,7 @@ async function setupReminder() {
     const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64url(publicKey) });
 
     saveReminder({
-      hour,
+      ...times,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin',
       subscription: sub.toJSON(),
       vapid: { publicKey, privateKey },
@@ -660,9 +698,9 @@ async function setupReminder() {
   }
 }
 
-async function showPreview() {
+async function showPreview(slot) {
   const reg = await navigator.serviceWorker.ready;
-  const msg = Tree.reminder(state.habits, state.log, todayKey());
+  const msg = Tree.reminder(state.habits, state.log, todayKey(), slot);
   await reg.showNotification(msg.title, { body: msg.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'reminder' });
 }
 
@@ -681,13 +719,16 @@ async function disableReminder() {
 $('#reminder-body').addEventListener('click', async (e) => {
   const id = e.target.closest('button')?.id;
   if (id === 'btn-reminder-setup') setupReminder();
-  if (id === 'btn-reminder-test') showPreview().catch(() => toast('Vorschau nicht möglich'));
+  const preview = e.target.closest('[data-preview]');
+  if (preview) showPreview(preview.dataset.preview).catch(() => toast('Vorschau nicht möglich'));
   if (id === 'btn-reminder-off') disableReminder();
   if (id === 'btn-reminder-copy') {
     const code = reminderCode(loadReminder());
     try {
       await navigator.clipboard.writeText(code);
       toast('Code kopiert');
+      const cfg = loadReminder();
+      if (cfg.dirty) { delete cfg.dirty; saveReminder(cfg); renderReminder(); }
     } catch {
       const box = $('.code-box');
       box.open = true;
@@ -698,13 +739,16 @@ $('#reminder-body').addEventListener('click', async (e) => {
 });
 
 $('#reminder-body').addEventListener('change', (e) => {
-  if (e.target.id !== 'reminder-hour') return;
+  if (!e.target.dataset.slot) return;
   const cfg = loadReminder();
-  if (!cfg) return;
-  cfg.hour = Number(e.target.value);
-  saveReminder(cfg);
+  if (!cfg) return; // vor dem Einrichten nur Auswahl, noch nichts speichern
+  const times = readSelects();
+  if (times.morning == null && times.evening == null) {
+    renderReminder();
+    return toast('Mindestens eine Uhrzeit muss an sein. Zum Ausschalten „Deaktivieren“ nutzen.');
+  }
+  saveReminder({ ...cfg, ...times, dirty: true });
   renderReminder();
-  toast('Uhrzeit geändert: Code neu kopieren und das Secret bei GitHub aktualisieren');
 });
 
 /* ---------- Einstellungen ---------- */

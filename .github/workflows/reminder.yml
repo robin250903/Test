@@ -1,6 +1,6 @@
 name: Erinnerung
 
-# Läuft stündlich; das Skript prüft selbst, ob gerade die eingestellte Uhrzeit ist.
+# Läuft stündlich; das Skript prüft selbst, ob gerade eine der eingestellten Uhrzeiten ist.
 # Über "Run workflow" lässt sich sofort eine Test-Erinnerung schicken.
 on:
   schedule:
@@ -39,3 +39,4 @@ jobs:
         run: node scripts/send-reminder.mjs send
         env:
           PUSH_CONFIG: ${{ secrets.PUSH_CONFIG }}
+          SLOT: ${{ steps.check.outputs.slot }}

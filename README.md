@@ -4,13 +4,14 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 
 ## Funktionen
 
-- **Heute-Ansicht:** Gewohnheiten abhaken, Fortschrittsring, die letzten 7 Tage nachtragen
+- **Heute-Ansicht:** nur der heutige Tag mit Fortschrittsring. Den Vortag kann man bis 12 Uhr mittags nachtragen
 - **Flexible Planung:** täglich, werktags oder an beliebigen Wochentagen. Freie Tage unterbrechen keine Serie
 - **Streaks:** aktuelle und beste Serie, Meilenstein-Meldungen
-- **Lebensbaum:** Erledigte Gewohnheiten lassen einen Baum über 8 Stufen wachsen. Verpasste Tage kosten
-  Gesundheit, der Baum welkt sichtbar und geht bei 0 ein (eine Stufe zurück). Gießkannen, verdient mit
-  7 perfekten Tagen, retten einen verpassten Tag. Dazu eine Chronik und Warnungen auf „Heute“
-- **Erinnerungen:** abendliche Push-Benachrichtigung mit dem Zustand deines Baums (siehe unten)
+- **Lebensbaum:** Erledigte Gewohnheiten lassen einen Baum über 8 Stufen wachsen. Die Gesundheit ändert sich
+  stufenlos je nach erledigtem Anteil (0 % → −25, 50 % → −10, 70 % → ±0, 100 % → +10), jede zusätzliche Gewohnheit
+  zählt. Bei 0 geht der Baum ein und fällt eine Stufe zurück. Gießkannen, verdient mit 7 perfekten Tagen, retten
+  einen Tag unter 50 %. Dazu eine Chronik und Warnungen auf „Heute“
+- **Erinnerungen:** Push-Benachrichtigung morgens und/oder abends mit dem Zustand deines Baums (siehe unten)
 - **Viel Auswahl:** 18 Farben plus freie Farbwahl, rund 90 Symbole in 5 Kategorien
 - **Statistik:** Quote der letzten 30 Tage und Kalender-Heatmap der letzten 17 Wochen
 - **Offline & privat:** kein Konto, kein Server, alle Daten bleiben im Browser (`localStorage`)
@@ -49,10 +50,11 @@ Wer Dateien ändert, sollte `VERSION` in `sw.js` erhöhen, damit installierte Ap
 
 Eine Web-App kann sich nicht selbst zu einer Uhrzeit wecken. Den Versand übernimmt deshalb GitHub Actions:
 
-1. In der App unter **Einstellungen → Erinnerungen** eine Uhrzeit wählen und „Erinnerungen einrichten“ tippen.
+1. In der App unter **Einstellungen → Erinnerungen** Uhrzeiten für morgens und abends wählen und „Erinnerungen einrichten“ tippen.
    Die App erzeugt ein eigenes Schlüsselpaar (VAPID) und meldet sich beim Push-Dienst des Browsers an.
 2. Den angezeigten Code als Repository-Secret `PUSH_CONFIG` speichern (Settings → Secrets and variables → Actions).
-3. Der Workflow `Erinnerung` läuft stündlich und verschickt zur eingestellten Stunde einen leeren Push.
+3. Der Workflow `Erinnerung` läuft stündlich und verschickt zur eingestellten Stunde einen Push, der nur
+   „morning“ oder „evening“ enthält.
    Der Text wird erst auf dem Gerät im Service Worker aus den lokalen Daten berechnet, deine Gewohnheiten
    verlassen das Handy also nie.
 

@@ -82,28 +82,12 @@ h2 { font-size: 17px; margin: 0 0 6px; }
 .ring .bar { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset 0.4s ease; }
 .ring span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
 
-/* Wochenleiste */
-.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 18px; }
-.week button {
-  border: 1px solid transparent;
-  background: var(--surface);
-  border-radius: 12px;
-  padding: 8px 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-height: 60px;
-}
-.week button .wd { font-size: 12px; color: var(--muted); }
-.week button .dn { font-size: 17px; font-weight: 700; }
-.week button .dot { width: 6px; height: 6px; border-radius: 50%; background: transparent; }
-.week button .dot.partial { background: var(--muted); opacity: 0.5; }
-.week button .dot.full { background: var(--accent); }
-.week button.sel { border-color: var(--text); }
-.week button.sel .wd { color: var(--text); }
-
 /* Gewohnheitsliste */
+.link-btn { display: block; margin: 16px auto 0; border: 0; background: none; color: var(--muted); font-size: 14px; text-decoration: underline; padding: 8px; }
+.curve { margin: 6px 0 2px; border-collapse: collapse; font-size: 13px; }
+.curve td { padding: 2px 14px 2px 0; color: var(--muted); }
+.curve td.neg { color: var(--danger); font-weight: 600; }
+.curve td.pos { color: var(--accent); font-weight: 600; }
 .section-label { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 20px 4px 8px; }
 
 .habit {
@@ -233,6 +217,9 @@ h2 { font-size: 17px; margin: 0 0 6px; }
   padding: 11px 12px;
   font-size: 16px;
 }
+.time-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.time-grid .field { margin-bottom: 12px; }
+.settings .banner code { background: var(--surface-2); padding: 1px 5px; border-radius: 6px; font-size: 12px; }
 .steps { margin: 4px 0 12px; padding-left: 22px; font-size: 14px; }
 .steps li { margin-bottom: 10px; }
 .steps a { color: var(--text); font-weight: 600; }

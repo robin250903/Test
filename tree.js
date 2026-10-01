@@ -18,10 +18,11 @@ const Tree = (() => {
 
   const RULES = {
     startHealth: 70,
-    perfect: 10,   // alles erledigt
-    half: 0,       // mindestens die Hälfte
-    weak: -10,     // weniger als die Hälfte
-    missed: -25,   // gar nichts
+    // Gesundheit pro Tag je nach Anteil erledigter Gewohnheiten, dazwischen linear:
+    // jede zusätzlich erledigte Gewohnheit bringt immer etwas.
+    curve: [[0, -25], [0.5, -10], [0.7, 0], [1, 10]],
+    perfect: 10,
+    canBelow: 0.5, // Gießkanne rettet jeden Tag unter 50 %
     reviveHealth: 40,
     canEvery: 7,   // perfekte Tage in Folge für eine Gießkanne
     maxCans: 2,
@@ -37,10 +38,13 @@ const Tree = (() => {
   const stageOf = (growth) => STAGES.reduce((s, st, i) => (growth >= st.min ? i : s), 0);
 
   function deltaFor(ratio) {
-    if (ratio >= 1) return RULES.perfect;
-    if (ratio >= 0.5) return RULES.half;
-    if (ratio > 0) return RULES.weak;
-    return RULES.missed;
+    const c = RULES.curve;
+    if (ratio >= 1) return c[c.length - 1][1];
+    for (let i = 1; i < c.length; i++) {
+      const [x0, y0] = c[i - 1], [x1, y1] = c[i];
+      if (ratio <= x1) return Math.round(y0 + ((ratio - x0) / (x1 - x0)) * (y1 - y0));
+    }
+    return 0;
   }
 
   function habitStart(h, log) {
@@ -89,13 +93,13 @@ const Tree = (() => {
           if (perfectRun % RULES.canEvery === 0 && cans < RULES.maxCans) { cans++; events.push({ type: 'can', key: k }); }
         } else {
           perfectRun = 0;
-          if (ratio === 0 && cans > 0) {
+          if (ratio < RULES.canBelow && cans > 0) {
             cans--;
             events.push({ type: 'saved', key: k });
           } else {
             const delta = deltaFor(ratio);
             health = clamp(health + delta);
-            if (delta < 0) events.push({ type: ratio === 0 ? 'missed' : 'weak', key: k, delta });
+            if (delta < 0) events.push({ type: ratio === 0 ? 'missed' : 'weak', key: k, delta, pct: Math.round(ratio * 100) });
           }
         }
         if (health <= 0) {
@@ -127,7 +131,7 @@ const Tree = (() => {
     r.tonight = { delta: 0, usesCan: false, dies: false };
     if (planned && done < planned) {
       const ratio = done / planned;
-      if (ratio === 0 && r.cans > 0) r.tonight.usesCan = true;
+      if (ratio < RULES.canBelow && r.cans > 0) r.tonight.usesCan = true;
       else {
         r.tonight.delta = deltaFor(ratio);
         r.tonight.dies = r.health + r.tonight.delta <= 0;
@@ -259,30 +263,59 @@ const Tree = (() => {
     </svg>`;
   }
 
-  /** Text für die abendliche Erinnerung, passend zum Zustand des Baums. */
-  function reminder(habits, log, todayK) {
+  /** Wie viele weitere Gewohnheiten heute nötig sind, damit der Baum die Nacht überlebt. */
+  function neededToSurvive(t) {
+    const { planned, done } = t.today;
+    for (let n = 0; done + n <= planned; n++) {
+      const ratio = (done + n) / planned;
+      if ((ratio < RULES.canBelow && t.cans > 0) || t.health + deltaFor(ratio) > 0) return n;
+    }
+    return planned - done;
+  }
+
+  /**
+   * Text für die Erinnerungen, passend zum Zustand des Baums.
+   * slot: 'morning' (motivierend, Tagesplan) oder 'evening' (anfeuernd, was noch geht).
+   */
+  function reminder(habits, log, todayK, slot = 'evening') {
     const t = simulate(habits, log, todayK);
     const { planned, done } = t.today;
     const open = habits.filter((h) => h.days.includes(weekdayIdx(parseKey(todayK))) && !(log[h.id] && log[h.id][todayK]));
     const names = open.slice(0, 3).map((h) => `${h.emoji} ${h.name}`).join(', ') + (open.length > 3 ? ' …' : '');
     const left = planned - done;
+    const morning = slot === 'morning';
 
     if (t.empty) return { title: '🌰 Pflanz deinen Baum', body: 'Leg deine erste Gewohnheit an, damit dein Baum wachsen kann.', urgent: false };
     if (!planned) return { title: '🌳 Ruhetag', body: 'Heute ist nichts geplant. Dein Baum ruht sich aus.', urgent: false };
-    if (done === planned) return { title: '🌳 Alles erledigt!', body: `Dein Baum ist heute gegossen (${t.stageName}, ${t.health} % Gesundheit). Stark!`, urgent: false };
+    if (done === planned) {
+      return morning
+        ? { title: '☀️ Schon alles erledigt!', body: `Was für ein Start in den Tag. Dein Baum ist gegossen (${t.health} % Gesundheit).`, urgent: false }
+        : { title: '🌳 Alles erledigt!', body: `Dein Baum ist heute gegossen (${t.stageName}, ${t.health} % Gesundheit). Stark!`, urgent: false };
+    }
+
+    if (morning) {
+      if (t.health < 40) {
+        return { title: '🌱 Heute kannst du deinen Baum retten', body: `Er ist geschwächt (${t.health} %). Alles erledigt bringt +${RULES.perfect}. Heute dran: ${names}`, urgent: false };
+      }
+      const plan = left === 1 ? 'Heute steht 1 Sache an' : `Heute stehen ${left} Sachen an`;
+      return { title: '☀️ Guten Morgen!', body: `${plan}: ${names}. Starte gut in den Tag, dein ${t.stageName} freut sich.`, urgent: false };
+    }
+
     if (t.tonight.dies) {
-      return { title: '🥀 Dein Baum geht heute Nacht ein!', body: `Noch ${left} von ${planned} offen: ${names}. Erledige mindestens die Hälfte, um ihn zu retten.`, urgent: true };
+      const need = neededToSurvive(t);
+      return { title: '🥀 Dein Baum geht heute Nacht ein!', body: `Schon ${need === 1 ? '1 weitere Gewohnheit rettet' : `${need} weitere retten`} ihn. Offen: ${names}`, urgent: true };
     }
     if (t.tonight.usesCan) {
-      return { title: '💧 Heute noch nichts gemacht', body: `Sonst wird eine Gießkanne verbraucht. Offen: ${names}`, urgent: false };
+      return { title: '💧 Deine Gießkanne ist in Gefahr', body: `Unter 50 % wird heute Nacht eine Gießkanne verbraucht. Du schaffst das noch: ${names}`, urgent: false };
     }
+    const gain = deltaFor((done + 1) / planned) - t.tonight.delta;
     if (t.tonight.delta < 0) {
-      return { title: '🍂 Dein Baum hat Durst', body: `Noch ${left} offen: ${names}. Sonst ${t.tonight.delta} Gesundheit.`, urgent: true };
+      return { title: '⏳ Du hast noch Zeit!', body: `Stand jetzt: ${t.tonight.delta} Gesundheit. Die nächste Gewohnheit bringt +${gain}. Offen: ${names}`, urgent: true };
     }
-    return { title: '🌿 Fast geschafft', body: `Noch ${left} offen für +${RULES.perfect} Gesundheit: ${names}`, urgent: false };
+    return { title: '🌿 Fast geschafft', body: `Noch ${left} offen. Die nächste bringt +${gain}, alles zusammen +${RULES.perfect}: ${names}`, urgent: false };
   }
 
-  return { STAGES, RULES, simulate, svg, healthLabel, reminder };
+  return { STAGES, RULES, simulate, svg, healthLabel, reminder, deltaFor, neededToSurvive };
 })();
 
 if (typeof module !== 'undefined') module.exports = Tree;

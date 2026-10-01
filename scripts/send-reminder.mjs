@@ -1,4 +1,4 @@
-// Verschickt die abendliche Erinnerung per Web Push. Läuft stündlich in GitHub Actions.
+// Verschickt die Morgen-/Abend-Erinnerung per Web Push. Läuft stündlich in GitHub Actions.
 //   node send-reminder.mjs check  -> schreibt send=true/false nach $GITHUB_OUTPUT
 //   node send-reminder.mjs send   -> verschickt die Benachrichtigung
 // Konfiguration kommt aus dem Secret PUSH_CONFIG (in der App unter Einstellungen erzeugt).
@@ -26,21 +26,31 @@ try {
   process.exit(1);
 }
 
+// v1 hatte nur eine Uhrzeit (abends), v2 hat morning/evening (je Stunde oder null)
+const slots = cfg.morning !== undefined || cfg.evening !== undefined
+  ? { morning: cfg.morning ?? null, evening: cfg.evening ?? null }
+  : { morning: null, evening: cfg.hour ?? null };
+
 if (mode === 'check') {
   const tz = cfg.timezone || 'Europe/Berlin';
   const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: tz }).format(new Date()));
   const force = process.env.FORCE === 'true';
-  const send = force || hour === Number(cfg.hour);
-  console.log(`Es ist ${hour} Uhr (${tz}), Erinnerung eingestellt auf ${cfg.hour} Uhr${force ? ', manuell gestartet' : ''} -> ${send ? 'senden' : 'nichts zu tun'}.`);
-  output('send', String(send));
+  let slot = Object.keys(slots).find((k) => slots[k] !== null && Number(slots[k]) === hour) || null;
+  // Manuell gestartet: passende Erinnerung zur Tageszeit schicken
+  if (!slot && force) slot = hour < 14 && slots.morning !== null ? 'morning' : 'evening';
+  const plan = Object.entries(slots).map(([k, v]) => `${k === 'morning' ? 'morgens' : 'abends'} ${v === null ? 'aus' : `${v} Uhr`}`).join(', ');
+  console.log(`Es ist ${hour} Uhr (${tz}). Eingestellt: ${plan}${force ? ' (manuell gestartet)' : ''} -> ${slot ? `sende ${slot === 'morning' ? 'Morgen' : 'Abend'}-Erinnerung` : 'nichts zu tun'}.`);
+  output('send', String(!!slot));
+  output('slot', slot || '');
 } else if (mode === 'send') {
   const { default: webpush } = await import('web-push');
   const [owner = 'user', repo = ''] = (process.env.GITHUB_REPOSITORY || '').split('/');
   webpush.setVapidDetails(`https://${owner.toLowerCase()}.github.io/${repo}/`, cfg.vapid.publicKey, cfg.vapid.privateKey);
   try {
     // Keine Nutzdaten: Das Handy berechnet den Text selbst aus den lokalen Daten.
-    const res = await webpush.sendNotification(cfg.subscription, JSON.stringify({ type: 'reminder' }), { TTL: 4 * 3600, urgency: 'high' });
-    console.log(`Erinnerung verschickt (Status ${res.statusCode}).`);
+    const slot = process.env.SLOT === 'morning' ? 'morning' : 'evening';
+    const res = await webpush.sendNotification(cfg.subscription, JSON.stringify({ type: 'reminder', slot }), { TTL: 3 * 3600, urgency: 'high' });
+    console.log(`${slot === 'morning' ? 'Morgen' : 'Abend'}-Erinnerung verschickt (Status ${res.statusCode}).`);
   } catch (err) {
     if (err.statusCode === 404 || err.statusCode === 410) {
       console.error('Das Benachrichtigungs-Abo ist abgelaufen. Richte die Erinnerungen in der App neu ein und aktualisiere das Secret PUSH_CONFIG.');
