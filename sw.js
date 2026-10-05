@@ -1,7 +1,7 @@
 // Offline-Cache für die App-Hülle. Bei Änderungen an den Dateien VERSION erhöhen.
-const VERSION = 'v4';
+const VERSION = 'v5';
 
-importScripts('tree.js', 'idb.js');
+importScripts('tree.js', 'idb.js', 'plan.js');
 const CACHE = `gewohnheiten-${VERSION}`;
 const ASSETS = [
   './',
@@ -9,7 +9,9 @@ const ASSETS = [
   'style.css',
   'tree.js',
   'idb.js',
+  'plan.js',
   'app.js',
+  'ablauf.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-180.png',
@@ -46,7 +48,14 @@ self.addEventListener('fetch', (e) => {
 /* ---------- Erinnerungen ---------- */
 
 const pad = (n) => String(n).padStart(2, '0');
-const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const dayKey = (offset = 0) => { const d = new Date(); d.setDate(d.getDate() + offset); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const todayKey = () => dayKey(0);
+
+/** Morgens den heutigen Ablauf anhängen, abends schon den von morgen. */
+function withPlan(msg, plan, slot) {
+  const extra = slot === 'morning' ? Plan.summary(plan, dayKey(0), 'Heute') : Plan.summary(plan, dayKey(1), 'Morgen');
+  return extra ? { ...msg, body: `${msg.body}\n${extra}` } : msg;
+}
 
 // Der Push selbst enthält keine Daten: Der Text wird erst hier auf dem Gerät aus dem aktuellen Stand berechnet.
 self.addEventListener('push', (e) => {
@@ -56,7 +65,7 @@ self.addEventListener('push', (e) => {
     let msg;
     try {
       const s = await Mirror.get('state');
-      msg = s ? Tree.reminder(s.habits || [], s.log || {}, todayKey(), slot) : null;
+      msg = s ? withPlan(Tree.reminder(s.habits || [], s.log || {}, todayKey(), slot), Plan.normalize(s.plan), slot) : null;
     } catch { msg = null; }
     msg = msg || { title: '🌳 Zeit für deine Gewohnheiten', body: 'Schau nach, wie es deinem Baum geht.' };
     await self.registration.showNotification(msg.title, {

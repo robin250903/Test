@@ -39,9 +39,9 @@ const todayKey = () => keyOf(new Date());
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (s && Array.isArray(s.habits)) return { habits: s.habits, log: s.log || {} };
+    if (s && Array.isArray(s.habits)) return { habits: s.habits, log: s.log || {}, plan: Plan.normalize(s.plan) };
   } catch { /* leer oder kaputt -> neu anfangen */ }
-  return { habits: [], log: {} };
+  return { habits: [], log: {}, plan: Plan.empty() };
 }
 
 function save() {
@@ -401,6 +401,7 @@ function renderStats() {
 /* ---------- Navigation ---------- */
 
 function render() {
+  if (currentView === 'plan') renderPlan();
   if (currentView === 'today') renderToday();
   if (currentView === 'tree') renderTree();
   if (currentView === 'stats') renderStats();
@@ -701,6 +702,10 @@ async function setupReminder() {
 async function showPreview(slot) {
   const reg = await navigator.serviceWorker.ready;
   const msg = Tree.reminder(state.habits, state.log, todayKey(), slot);
+  const extra = slot === 'morning'
+    ? Plan.summary(state.plan, todayKey(), 'Heute')
+    : Plan.summary(state.plan, keyOf(addDays(new Date(), 1)), 'Morgen');
+  if (extra) msg.body += `\n${extra}`;
   await reg.showNotification(msg.title, { body: msg.body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'reminder' });
 }
 
@@ -771,12 +776,14 @@ $('#input-import').addEventListener('change', async (e) => {
     if (!Array.isArray(data.habits) || typeof data.log !== 'object') throw new Error('format');
     const valid = data.habits.every((h) => h && typeof h.id === 'string' && typeof h.name === 'string' && Array.isArray(h.days) && h.days.every((x) => ALL_DAYS.includes(x)) && /^\d{4}-\d{2}-\d{2}$/.test(h.createdAt));
     if (!valid) throw new Error('format');
-    if (state.habits.length && !confirm('Das Backup ersetzt deine aktuellen Daten. Fortfahren?')) return;
+    if ((state.habits.length || state.plan.templates.length) && !confirm('Das Backup ersetzt deine aktuellen Daten. Fortfahren?')) return;
     state = {
       habits: data.habits.map((h) => ({ ...h, color: HEX.test(h.color) ? h.color : COLORS[0], emoji: String(h.emoji || '✅') })),
       log: data.log || {},
+      plan: Plan.normalize(data.plan),
     };
     save();
+    render();
     toast(`${state.habits.length} Gewohnheiten importiert`);
   } catch {
     toast('Diese Datei ist kein gültiges Backup.');
@@ -784,8 +791,8 @@ $('#input-import').addEventListener('change', async (e) => {
 });
 
 $('#btn-reset').addEventListener('click', () => {
-  if (!confirm('Wirklich alle Gewohnheiten und Einträge löschen?')) return;
-  state = { habits: [], log: {} };
+  if (!confirm('Wirklich alle Gewohnheiten, Einträge und Abläufe löschen?')) return;
+  state = { habits: [], log: {}, plan: Plan.empty() };
   save();
   toast('Alle Daten gelöscht');
 });
@@ -824,8 +831,12 @@ window.addEventListener('storage', (e) => {
   if (e.key === STORAGE_KEY) { state = load(); mirror(); render(); }
 });
 
-showView('today');
-mirror();
+// Erst starten, wenn alle Skripte (auch ablauf.js) geladen sind
+document.addEventListener('DOMContentLoaded', () => {
+  showView(state.plan.templates.length ? 'plan' : 'today');
+  if (currentView === 'plan') scrollToNow();
+  mirror();
+});
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -4,6 +4,12 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 
 ## Funktionen
 
+- **Tagesablauf:** Tagestypen wie „Uni-Tag“ oder „Wochenende“ mit Zeitblöcken (Morgenroutine, Vorlesung, Essen, Sport …),
+  die den Wochentagen zugeordnet werden. Für einzelne Tage lässt sich ein anderer Typ wählen. Die Live-Zeitleiste zeigt,
+  was gerade läuft (mit Restzeit), was als Nächstes kommt und wo freie Zeit ist. Routine-Blöcke haben Schritte statt Häkchen,
+  Blöcke lassen sich mit Gewohnheiten verknüpfen. Dazu Aufgaben für heute oder morgen, optional mit Uhrzeit, und
+  „Liegen geblieben“ für Unerledigtes
+
 - **Heute-Ansicht:** nur der heutige Tag mit Fortschrittsring. Den Vortag kann man bis 12 Uhr mittags nachtragen
 - **Flexible Planung:** täglich, werktags oder an beliebigen Wochentagen. Freie Tage unterbrechen keine Serie
 - **Streaks:** aktuelle und beste Serie, Meilenstein-Meldungen
@@ -39,6 +45,8 @@ ausgeliefert werden, z. B. über GitHub Pages.
 | `style.css` | Design inkl. Dark Mode |
 | `app.js` | Datenhaltung, Streak-Berechnung, Rendering |
 | `tree.js` | Spielregeln und Zeichnung des Lebensbaums |
+| `plan.js` | Logik des Tagesablaufs (Tagestypen, Zeitleiste, Bereinigung, Vorlage) |
+| `ablauf.js` | Ansicht und Editor des Tagesablaufs |
 | `idb.js` | Kopie der Daten in IndexedDB, damit der Service Worker sie lesen kann |
 | `sw.js` | Service Worker für Offline-Betrieb und Benachrichtigungen |
 | `scripts/send-reminder.mjs`, `.github/workflows/reminder.yml` | Stündlicher GitHub-Actions-Job, der die Erinnerung verschickt |

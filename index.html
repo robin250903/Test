@@ -17,7 +17,18 @@
 </head>
 <body>
   <main id="app">
-    <section id="view-today" class="view" data-view="today">
+    <section id="view-plan" class="view" data-view="plan" hidden>
+      <header class="top">
+        <div>
+          <p class="eyebrow" id="plan-eyebrow"></p>
+          <h1 id="plan-title">Dein Tag</h1>
+        </div>
+        <button type="button" class="head-btn" id="plan-head-btn" hidden>Bearbeiten</button>
+      </header>
+      <div id="plan-content"></div>
+    </section>
+
+    <section id="view-today" class="view" data-view="today" hidden>
       <header class="top">
         <div>
           <p class="eyebrow" id="today-weekday"></p>
@@ -69,7 +80,7 @@
       </div>
       <div class="card settings">
         <h2>Alles löschen</h2>
-        <p class="muted">Entfernt alle Gewohnheiten und Einträge. Das lässt sich nicht rückgängig machen.</p>
+        <p class="muted">Entfernt alle Gewohnheiten, Einträge, Tagesabläufe und Aufgaben. Das lässt sich nicht rückgängig machen.</p>
         <button class="btn btn-danger" id="btn-reset" type="button">Alle Daten löschen</button>
       </div>
     </section>
@@ -78,9 +89,13 @@
   <button class="fab" id="btn-add" type="button" aria-label="Gewohnheit hinzufügen">+</button>
 
   <nav class="tabs" aria-label="Navigation">
-    <button type="button" data-tab="today" class="active">
+    <button type="button" data-tab="plan">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <span>Ablauf</span>
+    </button>
+    <button type="button" data-tab="today">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
-      <span>Heute</span>
+      <span>Habits</span>
     </button>
     <button type="button" data-tab="tree">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21v-7M12 14l-3-3M12 16l3-3"/><path d="M12 3c-3.5 0-6 2.6-6 5.8 0 2.5 1.6 4.4 3.8 5.2h4.4c2.2-.8 3.8-2.7 3.8-5.2C18 5.6 15.5 3 12 3z"/></svg>
@@ -92,7 +107,7 @@
     </button>
     <button type="button" data-tab="settings">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>
-      <span>Einstellungen</span>
+      <span>Optionen</span>
     </button>
   </nav>
 
@@ -127,10 +142,44 @@
     </form>
   </dialog>
 
+  <dialog id="block-dialog">
+    <form method="dialog" id="block-form">
+      <h2 id="block-dialog-title">Neuer Zeitblock</h2>
+      <label class="field">
+        <span>Was steht an?</span>
+        <input id="b-title" required maxlength="60" autocomplete="off" placeholder="z. B. Vorlesung Mathe">
+      </label>
+      <div class="field">
+        <span>Art</span>
+        <div class="cat-chips" id="b-cats"></div>
+      </div>
+      <div class="time-row">
+        <label class="field"><span>Von</span><input type="time" id="b-start" required></label>
+        <label class="field"><span>Bis <small>(optional)</small></span><input type="time" id="b-end"></label>
+        <label class="field emoji-field"><span>Symbol</span><input id="b-emoji" maxlength="8" autocomplete="off"></label>
+      </div>
+      <label class="field">
+        <span>Schritte <small>(optional, einer pro Zeile)</small></span>
+        <textarea id="b-steps" rows="3" placeholder="Zähne putzen&#10;Bett machen&#10;Duschen"></textarea>
+      </label>
+      <label class="field" id="b-habit-field">
+        <span>Mit Gewohnheit verknüpfen <small>(abhaken direkt im Ablauf)</small></span>
+        <select id="b-habit"></select>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-block-cancel">Abbrechen</button>
+        <button type="submit" class="btn">Speichern</button>
+      </div>
+      <button type="button" class="btn btn-danger btn-ghost btn-delete" id="btn-block-delete" hidden>Zeitblock löschen</button>
+    </form>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="tree.js"></script>
   <script src="idb.js"></script>
+  <script src="plan.js"></script>
   <script src="app.js"></script>
+  <script src="ablauf.js"></script>
 </body>
 </html>
