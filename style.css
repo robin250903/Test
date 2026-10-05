@@ -455,19 +455,46 @@ dialog h2 { font-size: 20px; margin-bottom: 16px; }
 .tl-item.now .tl-dot { width: 16px; height: 16px; margin-top: 14px; animation: pulse 2s ease-in-out infinite; }
 .tl-task .tl-dot { width: 8px; height: 8px; margin-top: 18px; background: var(--text); }
 .tl-task .tl-card { border-left-width: 1px; padding: 4px 8px; }
-.tl-gap { list-style: none; margin: -2px 0 6px 74px; font-size: 12px; color: var(--muted); }
-.tl-gap span { border: 1px dashed var(--border); border-radius: 999px; padding: 2px 10px; display: inline-block; }
+.tl-gap { list-style: none; margin: -2px 0 8px 74px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tl-gap span { border: 1px dashed var(--border); border-radius: 999px; padding: 3px 10px; display: inline-block; }
+.tl-gap.past { opacity: 0.5; }
+.gap-add { border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--accent); border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 700; }
 .tl-now { list-style: none; display: grid; grid-template-columns: 50px 1fr; align-items: center; margin: 4px 0 10px; position: relative; z-index: 1; }
 .tl-now span { font-size: 12px; font-weight: 700; color: var(--danger); text-align: right; padding-right: 6px; }
 .tl-now::after { content: ''; height: 2px; background: var(--danger); border-radius: 2px; margin-left: 6px; box-shadow: -6px 0 0 2px var(--bg); }
 
+.habit-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .tl-habit {
-  display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+  display: inline-flex; align-items: center; gap: 6px;
   border: 1px solid var(--border); background: var(--surface); border-radius: 999px;
   padding: 4px 12px 4px 4px; font-size: 13px; font-weight: 600;
 }
 .mini-check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--hc); display: grid; place-items: center; font-size: 12px; color: #fff; }
 .tl-habit.on .mini-check { background: var(--hc); }
+.tl-habit.plan-me .mini-check { color: var(--hc); font-size: 15px; font-weight: 700; }
+.tl-habit.plan-me.on .mini-check { color: #fff; }
+
+.unplanned { margin: 4px 0 6px; }
+.unplanned-head { font-size: 13px; font-weight: 600; margin-bottom: -2px; }
+
+.tl-card.one-off { border-style: dashed; border-left-style: solid; position: relative; }
+.one-off-del { position: absolute; top: 4px; right: 4px; border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; padding: 4px 8px; }
+
+.todo-badge { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 10px; background: var(--surface-2); color: var(--muted); }
+.todo-badge.on { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--accent); }
+.todo-week { margin: 14px 0 2px; }
+.tasks-card { margin-top: 8px; }
+
+.habit-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.habit-pick button { border: 1px solid var(--border); background: transparent; border-radius: 999px; padding: 6px 12px; font-size: 14px; font-weight: 600; }
+.habit-pick button.suggest { border-color: var(--hc, var(--border)); border-style: dashed; }
+.habit-pick button[aria-pressed="true"] { background: var(--hc, var(--text)); border-color: var(--hc, var(--text)); border-style: solid; color: #fff; }
+#s-todos button[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
+.time-row.two { grid-template-columns: 1fr 1fr; }
+#slot-sub { margin-top: -8px; }
+
+.habit.todo-row .info .meta { white-space: normal; }
+.habit.todo-row .check { pointer-events: none; }
 
 /* Aufgaben */
 .card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }

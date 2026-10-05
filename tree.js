@@ -53,7 +53,11 @@ const Tree = (() => {
     return start;
   }
 
-  function simulate(habits, log, todayK) {
+  /**
+   * extra(dateKey) -> { planned, done } (optional): eine zusätzliche „Gewohnheit“ pro Tag,
+   * z. B. „Alle To-dos erledigt“. Sie zählt nur an Tagen, an denen sie geplant ist.
+   */
+  function simulate(habits, log, todayK, extra) {
     const result = {
       growth: 0, stage: 0, health: RULES.startHealth, cans: 0, perfectRun: 0,
       events: [], today: { planned: 0, done: 0 }, empty: !habits.length,
@@ -70,12 +74,15 @@ const Tree = (() => {
       const k = keyOf(d);
       const wd = weekdayIdx(d);
       const active = habits.filter((h) => starts.get(h.id) <= k);
-      const planned = active.filter((h) => h.days.includes(wd));
-      const done = planned.filter((h) => log[h.id] && log[h.id][k]).length;
+      const x = extra ? extra(k) : null;
+      const bonusPlanned = x && x.planned ? 1 : 0;
+      const bonusDone = x && x.planned && x.done ? 1 : 0;
+      const planned = { length: active.filter((h) => h.days.includes(wd)).length + bonusPlanned };
+      const done = active.filter((h) => h.days.includes(wd) && log[h.id] && log[h.id][k]).length + bonusDone;
       const stageBefore = stageOf(growth);
 
       // Jede erledigte Gewohnheit lässt den Baum wachsen, auch an ungeplanten Tagen
-      growth += active.filter((h) => log[h.id] && log[h.id][k]).length;
+      growth += active.filter((h) => log[h.id] && log[h.id][k]).length + bonusDone;
 
       if (k === todayK) {
         result.today = { planned: planned.length, done };
@@ -277,10 +284,12 @@ const Tree = (() => {
    * Text für die Erinnerungen, passend zum Zustand des Baums.
    * slot: 'morning' (motivierend, Tagesplan) oder 'evening' (anfeuernd, was noch geht).
    */
-  function reminder(habits, log, todayK, slot = 'evening') {
-    const t = simulate(habits, log, todayK);
+  function reminder(habits, log, todayK, slot = 'evening', extra) {
+    const t = simulate(habits, log, todayK, extra);
     const { planned, done } = t.today;
     const open = habits.filter((h) => h.days.includes(weekdayIdx(parseKey(todayK))) && !(log[h.id] && log[h.id][todayK]));
+    const x = extra ? extra(todayK) : null;
+    if (x && x.planned && !x.done) open.unshift({ emoji: '✅', name: `${x.total - x.doneCount} To-do${x.total - x.doneCount === 1 ? '' : 's'}` });
     const names = open.slice(0, 3).map((h) => `${h.emoji} ${h.name}`).join(', ') + (open.length > 3 ? ' …' : '');
     const left = planned - done;
     const morning = slot === 'morning';
@@ -310,7 +319,7 @@ const Tree = (() => {
     }
     const gain = deltaFor((done + 1) / planned) - t.tonight.delta;
     if (t.tonight.delta < 0) {
-      return { title: '⏳ Du hast noch Zeit!', body: `Stand jetzt: ${t.tonight.delta} Gesundheit. Die nächste Gewohnheit bringt +${gain}. Offen: ${names}`, urgent: true };
+      return { title: '⏳ Du hast noch Zeit!', body: `Stand jetzt: ${t.tonight.delta} Gesundheit. Eine weitere bringt +${gain}. Offen: ${names}`, urgent: true };
     }
     return { title: '🌿 Fast geschafft', body: `Noch ${left} offen. Die nächste bringt +${gain}, alles zusammen +${RULES.perfect}: ${names}`, urgent: false };
   }

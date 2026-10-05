@@ -4,7 +4,8 @@
 
 let planMode = 'today'; // 'today' | 'edit'
 let editTplId = null;
-let editingBlock = null; // { tplId, blockId | null, cat }
+let editingBlock = null; // { tplId, blockId | null, cat, habitIds }
+let slotDraft = null; // { habitIds: Set, todoId }
 
 const minNow = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 const durText = (m) => {
@@ -45,32 +46,88 @@ function renderPlan() {
 
 /* ----- Heute: Live-Zeitleiste ----- */
 
+const shortDate = (k) => new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' }).format(parseKey(k));
+
 function taskHtml(t, showTime) {
   return `<div class="task ${t.done ? 'done' : ''}">
     <button type="button" class="task-check" data-pa="task-toggle" data-id="${esc(t.id)}" aria-pressed="${t.done}" aria-label="${esc(t.title)} ${t.done ? 'als offen markieren' : 'erledigt'}">${t.done ? '✓' : ''}</button>
     <span class="task-title">${esc(t.title)}</span>
     ${showTime && t.time ? `<span class="task-time">${t.time}</span>` : ''}
-    <button type="button" class="task-del" data-pa="task-del" data-id="${esc(t.id)}" aria-label="Aufgabe löschen">×</button>
+    <button type="button" class="task-del" data-pa="task-del" data-id="${esc(t.id)}" aria-label="To-do löschen">×</button>
   </div>`;
 }
 
-function habitChip(habitId) {
-  const h = state.habits.find((x) => x.id === habitId);
-  if (!h) return '';
-  const done = isDone(h, todayKey());
-  return `<button type="button" class="tl-habit ${done ? 'on' : ''}" data-pa="habit" data-id="${esc(h.id)}" style="--hc:${h.color}" aria-pressed="${done}">
-    <span class="mini-check" aria-hidden="true">${done ? '✓' : ''}</span>${esc(h.emoji)} ${esc(h.name)}</button>`;
+function habitChips(ids) {
+  const chips = ids.map((id) => {
+    const h = state.habits.find((x) => x.id === id);
+    if (!h) return '';
+    const done = isDone(h, todayKey());
+    return `<button type="button" class="tl-habit ${done ? 'on' : ''}" data-pa="habit" data-id="${esc(h.id)}" style="--hc:${h.color}" aria-pressed="${done}">
+      <span class="mini-check" aria-hidden="true">${done ? '✓' : ''}</span>${esc(h.emoji)} ${esc(h.name)}</button>`;
+  }).join('');
+  return chips ? `<div class="habit-chips">${chips}</div>` : '';
+}
+
+/** Freie Lücken des Tages (mind. 15 Min), die noch nicht vorbei sind. */
+function freeGaps(items, now) {
+  const gaps = [];
+  let lastEnd = null;
+  for (const b of items) {
+    if (lastEnd !== null && b.s - lastEnd >= 15) gaps.push({ s: lastEnd, e: b.s });
+    if (b.e !== null) lastEnd = Math.max(lastEnd ?? 0, b.e);
+  }
+  return gaps.filter((g) => g.e > now);
+}
+
+/** Gewohnheiten, die heute fällig sind, aber in keinem Block des Tages stehen. */
+function unplannedHabits(items) {
+  const placed = new Set(items.flatMap((b) => b.habitIds));
+  const today = parseKey(todayKey());
+  return state.habits.filter((h) => isScheduled(h, today) && !placed.has(h.id));
+}
+
+function todoCard(today) {
+  const plan = state.plan;
+  const day = Plan.dayTodos(plan, today).sort((a, b) => a.done - b.done || (a.time || '99').localeCompare(b.time || '99'));
+  const week = Plan.weekTodos(plan, today).sort((a, b) => a.done - b.done);
+  const overdue = Plan.overdueTodos(plan, today);
+  const tomorrow = Plan.dayTodos(plan, Plan.addDays(today, 1)).filter((t) => !t.done).length;
+  const st = Plan.todoStatus(plan, today);
+  const badge = st.planned
+    ? `<span class="todo-badge ${st.done ? 'on' : ''}">${st.done ? '🌳 Bonus geschafft' : `${st.doneCount}/${st.total} · 🌳 Bonus`}</span>`
+    : '';
+  return `<div class="card tasks-card">
+    <div class="card-head"><h2>To-dos</h2>${badge}</div>
+    ${day.length ? day.map((t) => taskHtml(t, true)).join('') : '<p class="muted-sm hint">Für heute nichts Besonderes. Was musst du heute auf jeden Fall erledigen?</p>'}
+    ${week.length ? `<div class="section-label todo-week">Diese Woche · bis ${shortDate(Plan.weekEnd(today))}</div>${week.map((t) => taskHtml(t, false)).join('')}` : ''}
+    <form class="task-add" data-pa="add-task">
+      <input id="task-title" maxlength="80" placeholder="Neues To-do, z. B. Müll rausbringen" autocomplete="off" aria-label="Neues To-do">
+      <div class="task-add-row">
+        <select id="task-day" aria-label="Wann"><option value="0">Heute</option><option value="1">Morgen</option><option value="week">Diese Woche</option></select>
+        <input type="time" id="task-time" aria-label="Uhrzeit (optional)">
+        <button class="btn btn-small" type="submit">Hinzufügen</button>
+      </div>
+    </form>
+    ${st.planned ? '<p class="muted-sm hint">Alle To-dos von heute erledigt zählt für deinen Baum wie eine zusätzliche Gewohnheit.</p>' : ''}
+    ${tomorrow ? `<p class="muted-sm hint">Für morgen ${tomorrow === 1 ? 'ist 1 To-do' : `sind ${tomorrow} To-dos`} geplant.</p>` : ''}
+    ${overdue.length ? `<div class="overdue"><div class="section-label">Liegen geblieben</div>
+      ${overdue.map((t) => `<div class="task">
+        <span class="task-title">${esc(t.title)} <small class="muted-sm">${t.week ? 'Woche bis ' + shortDate(Plan.weekEnd(t.date)) : shortDate(t.date)}</small></span>
+        <button type="button" class="btn btn-small btn-ghost" data-pa="task-today" data-id="${esc(t.id)}">Auf heute</button>
+        <button type="button" class="task-del" data-pa="task-del" data-id="${esc(t.id)}" aria-label="To-do löschen">×</button>
+      </div>`).join('')}</div>` : ''}
+  </div>`;
 }
 
 function renderPlanToday(el, btn) {
   const today = todayKey();
   const tpl = Plan.templateFor(state.plan, today);
-  const items = Plan.timeline(tpl);
+  const items = Plan.dayTimeline(state.plan, today);
   const now = minNow();
   const st = Plan.status(items, now);
 
   $('#plan-eyebrow').textContent = new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
-  $('#plan-title').textContent = tpl ? `${tpl.emoji}\u00a0${tpl.name}` : '🌴\u00a0Freier Tag';
+  $('#plan-title').textContent = tpl ? `${tpl.emoji} ${tpl.name}` : '🌴 Freier Tag';
   btn.textContent = 'Bearbeiten';
 
   // Heute ein anderer Tagestyp?
@@ -96,7 +153,7 @@ function renderPlanToday(el, btn) {
       <div class="now-meta">${c.e !== null ? `bis ${Plan.fmt(c.e)} · noch ${durText(c.e - now)}` : `seit ${c.start}`}</div>
       ${pct !== null ? `<div class="bar"><i style="width:${pct}%;background:var(--c)"></i></div>` : ''}
       ${stepsHtml(c.steps)}
-      ${c.habitId ? `<div class="now-habit">${habitChip(c.habitId)}</div>` : ''}
+      ${habitChips(c.habitIds)}
       ${st.next ? `<div class="now-next">Danach um <b>${st.next.start}</b>: ${esc(blockEmoji(st.next))} ${esc(st.next.title)}</div>` : ''}
     </div>`;
   } else if (st.next) {
@@ -108,9 +165,9 @@ function renderPlanToday(el, btn) {
       ${stepsHtml(n.steps)}
     </div>`;
   } else if (items.length) {
-    const tmr = keyOf(addDays(new Date(), 1));
+    const tmr = Plan.addDays(today, 1);
     const t2 = Plan.templateFor(state.plan, tmr);
-    const first = Plan.timeline(t2)[0];
+    const first = Plan.dayTimeline(state.plan, tmr)[0];
     nowCard = `<div class="now-card" style="--c:#475569">
       <div class="now-label">Feierabend</div>
       <div class="now-title">🌙 Der Tag ist geschafft</div>
@@ -118,37 +175,19 @@ function renderPlanToday(el, btn) {
     </div>`;
   }
 
-  // Aufgaben
-  const tasks = state.plan.tasks.filter((t) => t.date === today);
-  const untimed = tasks.filter((t) => !t.time).sort((a, b) => a.done - b.done);
-  const overdue = state.plan.tasks.filter((t) => t.date < today && !t.done);
-  const tomorrowCount = state.plan.tasks.filter((t) => t.date === keyOf(addDays(new Date(), 1)) && !t.done).length;
-  const doneCount = tasks.filter((t) => t.done).length;
-  const taskCard = `<div class="card tasks-card">
-    <div class="card-head"><h2>Aufgaben</h2>${tasks.length ? `<span class="muted-sm">${doneCount}/${tasks.length} erledigt</span>` : ''}</div>
-    ${untimed.map((t) => taskHtml(t, false)).join('')}
-    ${tasks.some((t) => t.time) ? `<p class="muted-sm hint">Aufgaben mit Uhrzeit stehen in der Zeitleiste.</p>` : ''}
-    <form class="task-add" data-pa="add-task">
-      <input id="task-title" maxlength="80" placeholder="Neue Aufgabe, z. B. Wäsche waschen" autocomplete="off" aria-label="Neue Aufgabe">
-      <div class="task-add-row">
-        <select id="task-day" aria-label="Tag"><option value="0">Heute</option><option value="1">Morgen</option></select>
-        <input type="time" id="task-time" aria-label="Uhrzeit (optional)">
-        <button class="btn btn-small" type="submit">Hinzufügen</button>
-      </div>
-    </form>
-    ${tomorrowCount ? `<p class="muted-sm hint">Für morgen ${tomorrowCount === 1 ? 'ist 1 Aufgabe' : `sind ${tomorrowCount} Aufgaben`} geplant.</p>` : ''}
-    ${overdue.length ? `<div class="overdue"><div class="section-label">Liegen geblieben</div>
-      ${overdue.map((t) => `<div class="task">
-        <span class="task-title">${esc(t.title)} <small class="muted-sm">${new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' }).format(parseKey(t.date))}</small></span>
-        <button type="button" class="btn btn-small btn-ghost" data-pa="task-today" data-id="${esc(t.id)}">Auf heute</button>
-        <button type="button" class="task-del" data-pa="task-del" data-id="${esc(t.id)}" aria-label="Aufgabe löschen">×</button>
-      </div>`).join('')}</div>` : ''}
-  </div>`;
+  // Fällige Gewohnheiten ohne festen Platz im Tag
+  const unplanned = unplannedHabits(items);
+  const unplannedHtml = unplanned.length ? `<div class="unplanned">
+      <div class="unplanned-head">Noch nicht eingeplant <span class="muted-sm">· antippen zum Einplanen</span></div>
+      <div class="habit-chips">${unplanned.map((h) => `<button type="button" class="tl-habit plan-me ${isDone(h, today) ? 'on' : ''}" data-pa="plan-habit" data-id="${esc(h.id)}" style="--hc:${h.color}">
+        <span class="mini-check" aria-hidden="true">${isDone(h, today) ? '✓' : '+'}</span>${esc(h.emoji)} ${esc(h.name)}</button>`).join('')}</div>
+    </div>` : '';
 
-  // Zeitleiste: Blöcke und Aufgaben mit Uhrzeit, dazu freie Lücken und die Jetzt-Linie
+  // Zeitleiste: Blöcke und To-dos mit Uhrzeit, dazu freie Lücken und die Jetzt-Linie
+  const timedTodos = Plan.dayTodos(state.plan, today).filter((t) => t.time);
   const rows = [
     ...items.map((b) => ({ m: b.s, kind: 'block', b })),
-    ...tasks.filter((t) => t.time).map((t) => ({ m: Plan.toMin(t.time), kind: 'task', t })),
+    ...timedTodos.map((t) => ({ m: Plan.toMin(t.time), kind: 'task', t })),
   ].sort((a, b) => a.m - b.m || (a.kind === 'block' ? -1 : 1));
 
   let tl = '';
@@ -156,6 +195,14 @@ function renderPlanToday(el, btn) {
   let lastEnd = null;
   const nowLine = `<li class="tl-now" id="tl-now"><span>${Plan.fmt(now)}</span></li>`;
   for (const r of rows) {
+    if (r.kind === 'block' && lastEnd !== null && r.b.s - lastEnd >= 15) {
+      const g = { s: lastEnd, e: r.b.s };
+      if (!nowPlaced && g.s > now) { tl += nowLine; nowPlaced = true; }
+      const open = g.e > now;
+      const from = Math.max(g.s, open ? now : g.s);
+      tl += `<li class="tl-gap ${open ? '' : 'past'}"><span>Freie Zeit · ${durText(g.e - from)}${open && from > g.s ? ' übrig' : ''}</span>
+        ${open ? `<button type="button" class="gap-add" data-pa="fill-gap" data-s="${g.s}" data-e="${g.e}">+ Einplanen</button>` : ''}</li>`;
+    }
     if (!nowPlaced && r.m > now) { tl += nowLine; nowPlaced = true; }
     if (r.kind === 'task') {
       tl += `<li class="tl-item tl-task ${r.t.done ? 'past' : ''}"><div class="tl-time">${r.t.time}</div><div class="tl-dot"></div>
@@ -163,20 +210,18 @@ function renderPlanToday(el, btn) {
       continue;
     }
     const b = r.b;
-    if (lastEnd !== null && b.s - lastEnd >= 30) {
-      tl += `<li class="tl-gap"><span>Freie Zeit · ${durText(b.s - lastEnd)}</span></li>`;
-    }
     if (b.e !== null) lastEnd = Math.max(lastEnd ?? 0, b.e);
     const isNow = st.current && st.current.id === b.id;
     const isPast = !isNow && b.e !== null && now >= b.e;
     tl += `<li class="tl-item ${isNow ? 'now' : isPast ? 'past' : ''}" style="--c:${catOf(b).color}" ${isNow ? 'id="tl-current"' : ''}>
       <div class="tl-time">${b.start}${b.e !== null ? `<small>${Plan.fmt(b.e)}</small>` : ''}</div>
       <div class="tl-dot"></div>
-      <div class="tl-card">
+      <div class="tl-card ${b.oneOff ? 'one-off' : ''}">
+        ${b.oneOff ? `<button type="button" class="one-off-del" data-pa="del-oneoff" data-id="${esc(b.id)}" aria-label="Aus dem heutigen Plan entfernen">×</button>` : ''}
         <div class="tl-title">${esc(blockEmoji(b))} ${esc(b.title)}</div>
-        <div class="tl-meta">${b.e !== null ? durText(b.e - b.s) : 'offen'}${isNow ? ' · <b>läuft gerade</b>' : ''}</div>
+        <div class="tl-meta">${b.e !== null ? durText(b.e - b.s) : 'offen'}${b.oneOff ? ' · nur heute' : ''}${isNow ? ' · <b>läuft gerade</b>' : ''}</div>
         ${isPast ? '' : stepsHtml(b.steps)}
-        ${b.habitId ? habitChip(b.habitId) : ''}
+        ${habitChips(b.habitIds)}
       </div>
     </li>`;
   }
@@ -184,9 +229,10 @@ function renderPlanToday(el, btn) {
 
   const timelineHtml = rows.length
     ? `<ol class="timeline">${tl}</ol>`
-    : `<div class="empty"><div class="big">🌴</div><p>${tpl ? 'Dieser Tagestyp hat noch keine Zeitblöcke.' : 'Heute ist kein Ablauf geplant. Genieß den Tag!'}</p></div>`;
+    : `<div class="empty"><div class="big">🌴</div><p>${tpl ? 'Dieser Tagestyp hat noch keine Zeitblöcke.' : 'Heute ist kein Ablauf geplant. Genieß den Tag!'}</p>
+       <button type="button" class="btn btn-ghost" data-pa="fill-gap" data-s="${Math.ceil(now / 15) * 15}" data-e="${Math.ceil(now / 15) * 15 + 60}">+ Etwas einplanen</button></div>`;
 
-  el.innerHTML = switcher + nowCard + `<div class="section-label">Dein Tag</div>` + timelineHtml + taskCard;
+  el.innerHTML = switcher + nowCard + todoCard(today) + unplannedHtml + `<div class="section-label">Dein Tag</div>` + timelineHtml;
 }
 
 /* ----- Bearbeiten: Tagestypen, Wochentage, Zeitblöcke ----- */
@@ -209,7 +255,7 @@ function renderPlanEditor(el, btn) {
 
   const blocks = Plan.timeline(tpl).map((b) => `<button type="button" class="block-row" data-pa="edit-block" data-id="${esc(b.id)}" style="--c:${catOf(b).color}">
       <span class="block-time">${b.start}${b.e !== null ? `<small>bis ${Plan.fmt(b.e)}</small>` : ''}</span>
-      <span class="block-name">${esc(blockEmoji(b))} ${esc(b.title)}${b.steps.length ? ` <small>· ${b.steps.length} Schritte</small>` : ''}${b.habitId ? ' <small>· 🔗</small>' : ''}</span>
+      <span class="block-name">${esc(blockEmoji(b))} ${esc(b.title)}${b.steps.length ? ` <small>· ${b.steps.length} Schritte</small>` : ''}${b.habitIds.length ? ` <small>· ${b.habitIds.map((id) => esc((state.habits.find((h) => h.id === id) || {}).emoji || '')).join('')}</small>` : ''}</span>
       <span class="block-edit" aria-hidden="true">›</span>
     </button>`).join('');
 
@@ -254,12 +300,18 @@ function openBlockDialog(tplId, blockId) {
   $('#b-emoji').value = b ? b.emoji : '';
   $('#b-emoji').placeholder = catOf(editingBlock).emoji;
   $('#b-steps').value = b ? b.steps.join('\n') : '';
-  $('#b-habit').innerHTML = `<option value="">Keine</option>` + state.habits.map((h) => `<option value="${esc(h.id)}" ${b && b.habitId === h.id ? 'selected' : ''}>${esc(h.emoji)} ${esc(h.name)}</option>`).join('');
+  editingBlock.habitIds = new Set(b ? b.habitIds : []);
+  renderHabitPick('#b-habits', editingBlock.habitIds);
   $('#b-habit-field').hidden = !state.habits.length;
   $('#btn-block-delete').hidden = !b;
   renderCatChips();
   blockDialog.showModal();
   if (!b) $('#b-title').focus();
+}
+
+/** Auswahl-Chips für Gewohnheiten (Mehrfachauswahl). */
+function renderHabitPick(sel, selected, highlight = []) {
+  $(sel).innerHTML = state.habits.map((h) => `<button type="button" data-hpick="${esc(h.id)}" style="--hc:${h.color}" aria-pressed="${selected.has(h.id)}" class="${highlight.includes(h.id) ? 'suggest' : ''}">${esc(h.emoji)} ${esc(h.name)}</button>`).join('');
 }
 
 function renderCatChips() {
@@ -272,6 +324,14 @@ $('#b-cats').addEventListener('click', (e) => {
   if (!b) return;
   editingBlock.cat = b.dataset.cat;
   renderCatChips();
+});
+
+$('#b-habits').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-hpick]');
+  if (!b) return;
+  const id = b.dataset.hpick;
+  if (editingBlock.habitIds.has(id)) editingBlock.habitIds.delete(id); else editingBlock.habitIds.add(id);
+  b.setAttribute('aria-pressed', editingBlock.habitIds.has(id));
 });
 
 $('#block-form').addEventListener('submit', (e) => {
@@ -288,7 +348,7 @@ $('#block-form').addEventListener('submit', (e) => {
     emoji: $('#b-emoji').value.trim().slice(0, 8),
     cat: editingBlock.cat,
     steps: $('#b-steps').value.split('\n').map((s) => s.trim().slice(0, 60)).filter(Boolean).slice(0, 12),
-    habitId: $('#b-habit').value || null,
+    habitIds: [...editingBlock.habitIds].filter((id) => state.habits.some((h) => h.id === id)),
   };
   const tpl = findTpl(editingBlock.tplId);
   if (editingBlock.blockId) Object.assign(tpl.blocks.find((x) => x.id === editingBlock.blockId), data);
@@ -310,6 +370,82 @@ $('#btn-block-delete').addEventListener('click', () => {
 });
 blockDialog.addEventListener('click', (e) => { if (e.target === blockDialog) blockDialog.close(); });
 
+/* ----- Dialog: Freie Zeit einplanen (nur für heute) ----- */
+
+const slotDialog = $('#slot-dialog');
+const roundUp = (m, step) => Math.ceil(m / step) * step;
+
+function openSlotDialog(gapS, gapE, habitId) {
+  const now = minNow();
+  const start = gapS <= now && now < gapE ? Math.min(roundUp(now, 5), gapE - 5) : gapS;
+  const end = Math.min(gapE, start + 30);
+  const items = Plan.dayTimeline(state.plan, todayKey());
+  const unplanned = unplannedHabits(items).map((h) => h.id);
+  slotDraft = { habitIds: new Set(habitId ? [habitId] : []), todoId: null };
+  $('#slot-sub').textContent = gapE > gapS ? `Freie Zeit von ${Plan.fmt(gapS)} bis ${Plan.fmt(gapE % 1440)} · gilt nur für heute` : 'Gilt nur für heute';
+  $('#s-start').value = Plan.fmt(start % 1440);
+  $('#s-end').value = Plan.fmt(end % 1440);
+  $('#s-custom').value = '';
+  renderHabitPick('#s-habits', slotDraft.habitIds, unplanned);
+  $('#s-habits-field').hidden = !state.habits.length;
+  const today = todayKey();
+  const todos = [...Plan.dayTodos(state.plan, today).filter((t) => !t.done && !t.time), ...Plan.weekTodos(state.plan, today).filter((t) => !t.done)];
+  $('#s-todos').innerHTML = todos.map((t) => `<button type="button" data-tpick="${esc(t.id)}" aria-pressed="false">📝 ${esc(t.title)}</button>`).join('');
+  $('#s-todos-field').hidden = !todos.length;
+  slotDialog.showModal();
+}
+
+$('#s-habits').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-hpick]');
+  if (!b) return;
+  const id = b.dataset.hpick;
+  if (slotDraft.habitIds.has(id)) slotDraft.habitIds.delete(id); else slotDraft.habitIds.add(id);
+  b.setAttribute('aria-pressed', slotDraft.habitIds.has(id));
+});
+$('#s-todos').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-tpick]');
+  if (!b) return;
+  slotDraft.todoId = slotDraft.todoId === b.dataset.tpick ? null : b.dataset.tpick;
+  document.querySelectorAll('#s-todos [data-tpick]').forEach((x) => x.setAttribute('aria-pressed', x.dataset.tpick === slotDraft.todoId));
+});
+
+$('#slot-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const start = $('#s-start').value;
+  const endRaw = $('#s-end').value;
+  const end = Plan.TIME.test(endRaw) && endRaw !== start ? endRaw : null;
+  const custom = $('#s-custom').value.trim().slice(0, 60);
+  const habits = state.habits.filter((h) => slotDraft.habitIds.has(h.id));
+  const todo = state.plan.tasks.find((t) => t.id === slotDraft.todoId);
+  if (!Plan.TIME.test(start)) return toast('Bitte eine Startzeit wählen.');
+  if (!habits.length && !todo && !custom) return toast('Wähle eine Gewohnheit, ein To-do oder schreib etwas hinein.');
+
+  const today = todayKey();
+  const list = state.plan.dayBlocks[today] || (state.plan.dayBlocks[today] = []);
+  if (todo && !todo.week && !habits.length && !custom) {
+    // Ein Tages-To-do bekommt einfach eine Uhrzeit und erscheint so in der Zeitleiste
+    todo.time = start;
+  } else {
+    const title = custom || (todo && !habits.length ? todo.title : habits.map((h) => h.name).join(' & '));
+    list.push({
+      id: Plan.newId(), start, end, title: title.slice(0, 60),
+      emoji: custom ? '📌' : todo && !habits.length ? '📝' : habits[0].emoji,
+      cat: habits.length ? 'habit' : 'other', steps: todo && (habits.length || custom) ? [todo.title.slice(0, 60)] : [],
+      habitIds: habits.map((h) => h.id),
+    });
+    if (todo && !todo.week) todo.time = start;
+  }
+  // Alte Tagespläne aufräumen
+  const cutoff = Plan.addDays(today, -14);
+  for (const k of Object.keys(state.plan.dayBlocks)) if (k < cutoff || !state.plan.dayBlocks[k].length) delete state.plan.dayBlocks[k];
+  save();
+  slotDialog.close();
+  renderPlan();
+  toast('Für heute eingeplant');
+});
+$('#btn-slot-cancel').addEventListener('click', () => slotDialog.close());
+slotDialog.addEventListener('click', (e) => { if (e.target === slotDialog) slotDialog.close(); });
+
 /* ----- Ereignisse ----- */
 
 $('#plan-head-btn').addEventListener('click', () => {
@@ -327,6 +463,11 @@ $('#plan-content').addEventListener('click', (e) => {
   switch (a.dataset.pa) {
     case 'starter': {
       const s = Plan.starter();
+      // Gleichnamige Gewohnheiten direkt mit den Blöcken verknüpfen (z. B. „Sport“)
+      const norm = (x) => x.trim().toLowerCase();
+      for (const t of s.templates) for (const b of t.blocks) {
+        b.habitIds = state.habits.filter((h) => norm(h.name) === norm(b.title)).map((h) => h.id);
+      }
       Object.assign(plan, s);
       save();
       toast('Vorlage geladen. Tippe auf „Bearbeiten“, um sie anzupassen');
@@ -347,6 +488,7 @@ $('#plan-content').addEventListener('click', (e) => {
       t.done = !t.done;
       if (t.done && navigator.vibrate) navigator.vibrate(15);
       save();
+      if (t.done && !t.week && t.date === todayKey() && Plan.todoStatus(plan, todayKey()).done) toast('🌳 Alle To-dos erledigt – Bonus für deinen Baum!');
       break;
     }
     case 'task-del':
@@ -355,7 +497,21 @@ $('#plan-content').addEventListener('click', (e) => {
       break;
     case 'task-today': {
       const t = plan.tasks.find((x) => x.id === id);
-      if (t) { t.date = todayKey(); t.time = null; save(); toast('Auf heute verschoben'); }
+      if (t) { t.date = todayKey(); t.time = null; t.week = false; save(); toast('Auf heute verschoben'); }
+      break;
+    }
+    case 'fill-gap':
+      return openSlotDialog(Number(a.dataset.s), Number(a.dataset.e), null);
+    case 'plan-habit': {
+      const now = minNow();
+      const gap = freeGaps(Plan.dayTimeline(plan, todayKey()), now)[0];
+      const s0 = roundUp(now, 15);
+      return gap ? openSlotDialog(gap.s, gap.e, id) : openSlotDialog(s0, s0 + 30, id);
+    }
+    case 'del-oneoff': {
+      const k = todayKey();
+      plan.dayBlocks[k] = (plan.dayBlocks[k] || []).filter((b) => b.id !== id);
+      save();
       break;
     }
     case 'habit': {
@@ -442,14 +598,16 @@ $('#plan-content').addEventListener('submit', (e) => {
   const title = $('#task-title').value.trim();
   if (!title) return $('#task-title').focus();
   const time = $('#task-time').value;
-  const offset = Number($('#task-day').value);
-  state.plan.tasks.push({ id: Plan.newId(), date: keyOf(addDays(new Date(), offset)), title: title.slice(0, 80), time: Plan.TIME.test(time) ? time : null, done: false });
+  const when = $('#task-day').value;
+  const week = when === 'week';
+  const offset = week ? 0 : Number(when);
+  state.plan.tasks.push({ id: Plan.newId(), date: keyOf(addDays(new Date(), offset)), title: title.slice(0, 80), time: !week && Plan.TIME.test(time) ? time : null, done: false, week });
   // Erledigte Aufgaben älter als 30 Tage aufräumen
   const cutoff = keyOf(addDays(new Date(), -30));
   state.plan.tasks = state.plan.tasks.filter((t) => !(t.done && t.date < cutoff));
   save();
   renderPlan();
-  toast(offset ? 'Für morgen eingeplant' : 'Aufgabe hinzugefügt');
+  toast(week ? 'Für diese Woche notiert' : offset ? 'Für morgen eingeplant' : 'To-do hinzugefügt');
   $('#task-title').focus();
 });
 
@@ -465,6 +623,6 @@ setInterval(() => {
   if (currentView !== 'plan' || planMode !== 'today' || document.hidden) return;
   const active = document.activeElement;
   if (active && active.closest('#plan-content') && /INPUT|SELECT|TEXTAREA/.test(active.tagName)) return;
-  if (blockDialog.open) return;
+  if (blockDialog.open || slotDialog.open) return;
   renderPlan();
 }, 30 * 1000);

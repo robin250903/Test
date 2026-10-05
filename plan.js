@@ -17,6 +17,7 @@ const Plan = (() => {
     sport: { name: 'Sport', color: '#16a34a', emoji: '🏃' },
     free: { name: 'Freizeit', color: '#db2777', emoji: '🎮' },
     sleep: { name: 'Schlaf', color: '#475569', emoji: '😴' },
+    habit: { name: 'Gewohnheiten', color: '#0891b2', emoji: '✅' },
     other: { name: 'Sonstiges', color: '#78716c', emoji: '📌' },
   };
 
@@ -29,7 +30,27 @@ const Plan = (() => {
   const idOk = (v) => typeof v === 'string' && /^[\w-]{1,40}$/.test(v);
   const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-  const empty = () => ({ templates: [], weekdays: [null, null, null, null, null, null, null], overrides: {}, tasks: [] });
+  const empty = () => ({ templates: [], weekdays: [null, null, null, null, null, null, null], overrides: {}, tasks: [], dayBlocks: {} });
+
+  const addDays = (k, n) => { const d = parseKey(k); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  /** Sonntag der Woche, in der das Datum liegt (Woche Mo–So). */
+  const weekEnd = (k) => addDays(k, 6 - weekdayIdx(parseKey(k)));
+
+  function normBlock(b) {
+    // Früher eine Gewohnheit pro Block (habitId), jetzt beliebig viele (habitIds)
+    const ids = Array.isArray(b.habitIds) ? b.habitIds : (b.habitId ? [b.habitId] : []);
+    return {
+      id: b.id,
+      start: b.start,
+      end: TIME.test(b.end) && b.end !== b.start ? b.end : null,
+      title: str(b.title, 60) || 'Block',
+      emoji: str(b.emoji, 8),
+      cat: CATEGORIES[b.cat] ? b.cat : 'other',
+      steps: (Array.isArray(b.steps) ? b.steps : []).map((x) => str(x, 60)).filter(Boolean).slice(0, 12),
+      habitIds: [...new Set(ids.filter(idOk))].slice(0, 10),
+    };
+  }
+  const validBlock = (b) => b && idOk(b.id) && TIME.test(b.start);
 
   /** Bereinigt gespeicherte oder importierte Daten, damit kaputte Einträge die App nicht stören. */
   function normalize(p) {
@@ -40,16 +61,7 @@ const Plan = (() => {
         id: t.id,
         name: str(t.name, 40) || 'Tag',
         emoji: str(t.emoji, 8) || '📅',
-        blocks: (Array.isArray(t.blocks) ? t.blocks : []).filter((b) => b && idOk(b.id) && TIME.test(b.start)).slice(0, 60).map((b) => ({
-          id: b.id,
-          start: b.start,
-          end: TIME.test(b.end) && b.end !== b.start ? b.end : null,
-          title: str(b.title, 60) || 'Block',
-          emoji: str(b.emoji, 8),
-          cat: CATEGORIES[b.cat] ? b.cat : 'other',
-          steps: (Array.isArray(b.steps) ? b.steps : []).map((s) => str(s, 60)).filter(Boolean).slice(0, 12),
-          habitId: idOk(b.habitId) ? b.habitId : null,
-        })),
+        blocks: (Array.isArray(t.blocks) ? t.blocks : []).filter(validBlock).slice(0, 60).map(normBlock),
       }));
     }
     const ids = new Set(out.templates.map((t) => t.id));
@@ -59,8 +71,13 @@ const Plan = (() => {
     }
     if (Array.isArray(p.tasks)) {
       out.tasks = p.tasks.filter((t) => t && idOk(t.id) && DATE.test(t.date)).slice(-500).map((t) => ({
-        id: t.id, date: t.date, title: str(t.title, 80) || 'Aufgabe', time: TIME.test(t.time) ? t.time : null, done: !!t.done,
+        id: t.id, date: t.date, title: str(t.title, 80) || 'Aufgabe', time: TIME.test(t.time) ? t.time : null, done: !!t.done, week: !!t.week,
       }));
+    }
+    if (p.dayBlocks && typeof p.dayBlocks === 'object') {
+      for (const [k, list] of Object.entries(p.dayBlocks)) {
+        if (DATE.test(k) && Array.isArray(list)) out.dayBlocks[k] = list.filter(validBlock).slice(0, 30).map(normBlock);
+      }
     }
     return out;
   }
@@ -74,9 +91,9 @@ const Plan = (() => {
   }
 
   /** Sortierte Blöcke mit Minuten. Ohne eigenes Ende endet ein Block, wenn der nächste beginnt. */
-  function timeline(tpl) {
-    if (!tpl) return [];
-    const blocks = [...tpl.blocks].sort((a, b) => toMin(a.start) - toMin(b.start));
+  function timeline(tpl, extraBlocks = []) {
+    const blocks = [...(tpl ? tpl.blocks : []), ...extraBlocks.map((b) => ({ ...b, oneOff: true }))]
+      .sort((a, b) => toMin(a.start) - toMin(b.start));
     return blocks.map((b, i) => {
       const s = toMin(b.start);
       let e = b.end ? toMin(b.end) : (blocks[i + 1] ? toMin(blocks[i + 1].start) : null);
@@ -93,12 +110,31 @@ const Plan = (() => {
     return { current, next, before: !!items.length && now < items[0].s };
   }
 
+  /** Zeitleiste eines Tages: Tagestyp plus nur für diesen Tag eingeplante Blöcke. */
+  const dayTimeline = (plan, dateK) => timeline(templateFor(plan, dateK), plan.dayBlocks[dateK] || []);
+
+  /* ---------- To-dos ---------- */
+
+  /** To-dos, die genau für diesen Tag geplant sind (ohne Wochen-To-dos). */
+  const dayTodos = (plan, dateK) => plan.tasks.filter((t) => !t.week && t.date === dateK);
+  /** Wochen-To-dos, die an diesem Tag sichtbar sind (angelegt in dieser Woche, noch nicht vorbei). */
+  const weekTodos = (plan, dateK) => plan.tasks.filter((t) => t.week && t.date <= dateK && weekEnd(t.date) >= dateK);
+  /** Unerledigtes aus der Vergangenheit. */
+  const overdueTodos = (plan, dateK) => plan.tasks.filter((t) => !t.done && (t.week ? weekEnd(t.date) < dateK : t.date < dateK));
+
+  /** Für den Baum: Gab es an diesem Tag To-dos, und sind alle erledigt? */
+  function todoStatus(plan, dateK) {
+    const list = dayTodos(plan, dateK);
+    const doneCount = list.filter((t) => t.done).length;
+    return { planned: list.length > 0, done: list.length > 0 && doneCount === list.length, total: list.length, doneCount };
+  }
+
   /** Kurzfassung für die Erinnerungen, z. B. „📅 Uni-Tag ab 07:00 (☀️ Morgenroutine) · 2 Aufgaben“. */
   function summary(plan, dateK, prefix = 'Heute') {
     if (!plan) return '';
     const tpl = templateFor(plan, dateK);
-    const items = timeline(tpl);
-    const tasks = plan.tasks.filter((t) => t.date === dateK && !t.done).length;
+    const items = dayTimeline(plan, dateK);
+    const tasks = dayTodos(plan, dateK).filter((t) => !t.done).length + weekTodos(plan, dateK).filter((t) => !t.done).length;
     const parts = [];
     if (tpl && items.length) {
       const first = items[0];
@@ -106,13 +142,13 @@ const Plan = (() => {
     } else if (plan.templates.length) {
       parts.push(`${prefix}: freier Tag`);
     }
-    if (tasks) parts.push(`${tasks} Aufgabe${tasks === 1 ? '' : 'n'}`);
+    if (tasks) parts.push(`${tasks} To-do${tasks === 1 ? '' : 's'}`);
     return parts.join(' · ');
   }
 
   /** Vorlage zum Start: Uni-Tag (Mo–Fr) und Wochenende (Sa–So). */
   function starter() {
-    const b = (start, end, title, emoji, cat, steps = []) => ({ id: newId() + Math.random().toString(36).slice(2, 5), start, end, title, emoji, cat, steps, habitId: null });
+    const b = (start, end, title, emoji, cat, steps = []) => ({ id: newId() + Math.random().toString(36).slice(2, 5), start, end, title, emoji, cat, steps, habitIds: [] });
     const uni = {
       id: newId(), name: 'Uni-Tag', emoji: '🎓',
       blocks: [
@@ -147,7 +183,10 @@ const Plan = (() => {
     };
   }
 
-  return { CATEGORIES, TIME, empty, normalize, templateFor, timeline, status, summary, starter, toMin, fmt, newId };
+  return {
+    CATEGORIES, TIME, empty, normalize, templateFor, timeline, dayTimeline, status, summary, starter, toMin, fmt, newId,
+    dayTodos, weekTodos, overdueTodos, todoStatus, weekEnd, addDays,
+  };
 })();
 
 if (typeof module !== 'undefined') module.exports = Plan;

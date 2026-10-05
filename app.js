@@ -185,8 +185,10 @@ function renderToday() {
 
   const planned = state.habits.filter((h) => isScheduled(h, sel));
   const other = state.habits.filter((h) => !isScheduled(h, sel));
-  const doneCount = planned.filter((h) => isDone(h, selectedKey)).length;
-  renderRing(doneCount, planned.length);
+  const todo = Plan.todoStatus(state.plan, selectedKey);
+  const doneCount = planned.filter((h) => isDone(h, selectedKey)).length + (todo.done ? 1 : 0);
+  const plannedCount = planned.length + (todo.planned ? 1 : 0);
+  renderRing(doneCount, plannedCount);
 
   if (!state.habits.length) {
     $('#today-list').innerHTML = `<div class="empty">
@@ -199,12 +201,13 @@ function renderToday() {
   }
 
   let html = '';
+  if (todo.planned) html += todoRow(todo);
   if (planned.length) html += planned.map((h) => habitRow(h, false)).join('');
-  else html += `<div class="empty"><div class="big">☀️</div><p>Für diesen Tag ist nichts geplant.</p></div>`;
+  else if (!todo.planned) html += `<div class="empty"><div class="big">☀️</div><p>Für diesen Tag ist nichts geplant.</p></div>`;
   if (other.length) {
     html += `<div class="section-label">Nicht geplant</div>` + other.map((h) => habitRow(h, true)).join('');
   }
-  if (planned.length && doneCount === planned.length) {
+  if (plannedCount && doneCount === plannedCount) {
     html = `<div class="card" style="text-align:center">🎉 <b>${isToday ? 'Alles erledigt für heute! Dein Baum ist gegossen.' : 'Alles erledigt an diesem Tag!'}</b></div>` + html;
   }
   if (isToday) {
@@ -216,6 +219,18 @@ function renderToday() {
     html = `<div class="banner">✏️ <div>Du trägst für <b>gestern</b> nach. Dein Baum wird automatisch neu berechnet. <button type="button" class="banner-link" data-backfill="no">Zurück zu heute</button></div></div>` + html;
   }
   $('#today-list').innerHTML = html;
+}
+
+/** Bonus-Zeile: hakt sich automatisch ab, wenn alle To-dos des Tages erledigt sind. */
+function todoRow(todo) {
+  return `<div class="habit todo-row" style="--c:var(--accent)">
+    <div class="emoji" aria-hidden="true">✅</div>
+    <button type="button" class="info" data-tab="plan" aria-label="Zu den To-dos">
+      <div class="name">Alle To-dos erledigt</div>
+      <div class="meta"><b>${todo.doneCount}/${todo.total}</b> erledigt · Bonus für deinen Baum · im Ablauf ›</div>
+    </button>
+    <div class="check ${todo.done ? 'on' : ''}" aria-hidden="true">${CHECK_SVG}</div>
+  </div>`;
 }
 
 function habitRow(h, off) {
@@ -245,7 +260,9 @@ function renderRing(done, total) {
 
 /* ---------- Ansicht: Baum ---------- */
 
-const treeState = () => Tree.simulate(state.habits, state.log, todayKey());
+/** „Alle To-dos erledigt“ zählt für den Baum wie eine zusätzliche Gewohnheit. */
+const todoExtra = (k) => Plan.todoStatus(state.plan, k);
+const treeState = () => Tree.simulate(state.habits, state.log, todayKey(), todoExtra);
 const treeSeed = () => (state.habits.length ? state.habits.map((h) => h.createdAt).sort()[0] : 'baum');
 
 function healthColor(h) {
@@ -701,7 +718,7 @@ async function setupReminder() {
 
 async function showPreview(slot) {
   const reg = await navigator.serviceWorker.ready;
-  const msg = Tree.reminder(state.habits, state.log, todayKey(), slot);
+  const msg = Tree.reminder(state.habits, state.log, todayKey(), slot, todoExtra);
   const extra = slot === 'morning'
     ? Plan.summary(state.plan, todayKey(), 'Heute')
     : Plan.summary(state.plan, keyOf(addDays(new Date(), 1)), 'Morgen');

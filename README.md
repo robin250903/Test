@@ -6,10 +6,12 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 
 - **Tagesablauf:** Tagestypen wie „Uni-Tag“ oder „Wochenende“ mit Zeitblöcken (Morgenroutine, Vorlesung, Essen, Sport …),
   die den Wochentagen zugeordnet werden. Für einzelne Tage lässt sich ein anderer Typ wählen. Die Live-Zeitleiste zeigt,
-  was gerade läuft (mit Restzeit), was als Nächstes kommt und wo freie Zeit ist. Routine-Blöcke haben Schritte statt Häkchen,
-  Blöcke lassen sich mit Gewohnheiten verknüpfen. Dazu Aufgaben für heute oder morgen, optional mit Uhrzeit, und
-  „Liegen geblieben“ für Unerledigtes
-
+  was gerade läuft (mit Restzeit), was als Nächstes kommt und wo freie Zeit ist. Routine-Blöcke haben Schritte statt Häkchen
+- **Gewohnheiten im Ablauf:** Blöcke können mehrere Gewohnheiten enthalten (z. B. Kreatin in der Morgenroutine), die direkt
+  in der Zeitleiste abgehakt werden. Freie Lücken lassen sich per „+ Einplanen“ nur für heute füllen; fällige, noch nicht
+  eingeplante Gewohnheiten werden angezeigt
+- **To-dos:** für heute, morgen oder „diese Woche“, optional mit Uhrzeit, dazu „Liegen geblieben“. Gibt es heute To-dos,
+  zählt „Alle To-dos erledigt“ für den Baum wie eine zusätzliche Gewohnheit (Wochen-To-dos zählen nicht täglich)
 - **Heute-Ansicht:** nur der heutige Tag mit Fortschrittsring. Den Vortag kann man bis 12 Uhr mittags nachtragen
 - **Flexible Planung:** täglich, werktags oder an beliebigen Wochentagen. Freie Tage unterbrechen keine Serie
 - **Streaks:** aktuelle und beste Serie, Meilenstein-Meldungen

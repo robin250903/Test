@@ -1,5 +1,5 @@
 // Offline-Cache für die App-Hülle. Bei Änderungen an den Dateien VERSION erhöhen.
-const VERSION = 'v5';
+const VERSION = 'v6';
 
 importScripts('tree.js', 'idb.js', 'plan.js');
 const CACHE = `gewohnheiten-${VERSION}`;
@@ -65,7 +65,8 @@ self.addEventListener('push', (e) => {
     let msg;
     try {
       const s = await Mirror.get('state');
-      msg = s ? withPlan(Tree.reminder(s.habits || [], s.log || {}, todayKey(), slot), Plan.normalize(s.plan), slot) : null;
+      const plan = Plan.normalize(s && s.plan);
+      msg = s ? withPlan(Tree.reminder(s.habits || [], s.log || {}, todayKey(), slot, (k) => Plan.todoStatus(plan, k)), plan, slot) : null;
     } catch { msg = null; }
     msg = msg || { title: '🌳 Zeit für deine Gewohnheiten', body: 'Schau nach, wie es deinem Baum geht.' };
     await self.registration.showNotification(msg.title, {

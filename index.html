@@ -162,15 +162,33 @@
         <span>Schritte <small>(optional, einer pro Zeile)</small></span>
         <textarea id="b-steps" rows="3" placeholder="Zähne putzen&#10;Bett machen&#10;Duschen"></textarea>
       </label>
-      <label class="field" id="b-habit-field">
-        <span>Mit Gewohnheit verknüpfen <small>(abhaken direkt im Ablauf)</small></span>
-        <select id="b-habit"></select>
-      </label>
+      <div class="field" id="b-habit-field">
+        <span>Gewohnheiten in diesem Block <small>(abhaken direkt im Ablauf)</small></span>
+        <div class="habit-pick" id="b-habits"></div>
+      </div>
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" id="btn-block-cancel">Abbrechen</button>
         <button type="submit" class="btn">Speichern</button>
       </div>
       <button type="button" class="btn btn-danger btn-ghost btn-delete" id="btn-block-delete" hidden>Zeitblock löschen</button>
+    </form>
+  </dialog>
+
+  <dialog id="slot-dialog">
+    <form method="dialog" id="slot-form">
+      <h2>Einplanen</h2>
+      <p class="muted" id="slot-sub"></p>
+      <div class="time-row two">
+        <label class="field"><span>Von</span><input type="time" id="s-start" required></label>
+        <label class="field"><span>Bis</span><input type="time" id="s-end"></label>
+      </div>
+      <div class="field" id="s-habits-field"><span>Gewohnheiten</span><div class="habit-pick" id="s-habits"></div></div>
+      <div class="field" id="s-todos-field"><span>To-do</span><div class="habit-pick" id="s-todos"></div></div>
+      <label class="field"><span>Oder etwas Eigenes</span><input id="s-custom" maxlength="60" autocomplete="off" placeholder="z. B. Einkaufen, Mittagsschlaf"></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-slot-cancel">Abbrechen</button>
+        <button type="submit" class="btn">Einplanen</button>
+      </div>
     </form>
   </dialog>
 
