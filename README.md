@@ -10,6 +10,10 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 - **Gewohnheiten im Ablauf:** Blöcke können mehrere Gewohnheiten enthalten (z. B. Kreatin in der Morgenroutine), die direkt
   in der Zeitleiste abgehakt werden. Freie Lücken lassen sich per „+ Einplanen“ nur für heute füllen; fällige, noch nicht
   eingeplante Gewohnheiten werden angezeigt
+- **Vorausplanen:** Über die Tagesleiste im Ablauf lassen sich die nächsten 6 Tage planen: Tagestyp ändern,
+  freie Lücken füllen, To-dos für diesen Tag anlegen. Statt des Live-Status gibt es eine Planungsübersicht
+- **Pausieren:** Gewohnheiten lassen sich bis zu einem Datum oder bis auf Weiteres pausieren (z. B. Sport bei einer
+  Verletzung). Pausentage zählen nicht für Baum, Serien, Quote und Erinnerungen; die Zeiträume werden gespeichert
 - **To-dos:** für heute, morgen oder „diese Woche“, optional mit Uhrzeit, dazu „Liegen geblieben“. Gibt es heute To-dos,
   zählt „Alle To-dos erledigt“ für den Baum wie eine zusätzliche Gewohnheit (Wochen-To-dos zählen nicht täglich)
 - **Heute-Ansicht:** nur der heutige Tag mit Fortschrittsring. Den Vortag kann man bis 12 Uhr mittags nachtragen

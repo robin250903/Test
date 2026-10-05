@@ -35,6 +35,11 @@ const Tree = (() => {
   const weekdayIdx = (d) => (d.getDay() + 6) % 7;
   const clamp = (v) => Math.max(0, Math.min(100, v));
 
+  /** Ist die Gewohnheit an diesem Tag pausiert? pauses: [{ from, to|null }], beide Tage inklusive. */
+  const isPaused = (h, k) => Array.isArray(h.pauses) && h.pauses.some((p) => p.from <= k && (!p.to || k <= p.to));
+  /** Ist die Gewohnheit an diesem Tag fällig (Wochentag passt und nicht pausiert)? */
+  const isDue = (h, k) => h.days.includes(weekdayIdx(parseKey(k))) && !isPaused(h, k);
+
   const stageOf = (growth) => STAGES.reduce((s, st, i) => (growth >= st.min ? i : s), 0);
 
   function deltaFor(ratio) {
@@ -77,8 +82,9 @@ const Tree = (() => {
       const x = extra ? extra(k) : null;
       const bonusPlanned = x && x.planned ? 1 : 0;
       const bonusDone = x && x.planned && x.done ? 1 : 0;
-      const planned = { length: active.filter((h) => h.days.includes(wd)).length + bonusPlanned };
-      const done = active.filter((h) => h.days.includes(wd) && log[h.id] && log[h.id][k]).length + bonusDone;
+      const due = active.filter((h) => h.days.includes(wd) && !isPaused(h, k));
+      const planned = { length: due.length + bonusPlanned };
+      const done = due.filter((h) => log[h.id] && log[h.id][k]).length + bonusDone;
       const stageBefore = stageOf(growth);
 
       // Jede erledigte Gewohnheit lässt den Baum wachsen, auch an ungeplanten Tagen
@@ -287,7 +293,7 @@ const Tree = (() => {
   function reminder(habits, log, todayK, slot = 'evening', extra) {
     const t = simulate(habits, log, todayK, extra);
     const { planned, done } = t.today;
-    const open = habits.filter((h) => h.days.includes(weekdayIdx(parseKey(todayK))) && !(log[h.id] && log[h.id][todayK]));
+    const open = habits.filter((h) => isDue(h, todayK) && !(log[h.id] && log[h.id][todayK]));
     const x = extra ? extra(todayK) : null;
     if (x && x.planned && !x.done) open.unshift({ emoji: '✅', name: `${x.total - x.doneCount} To-do${x.total - x.doneCount === 1 ? '' : 's'}` });
     const names = open.slice(0, 3).map((h) => `${h.emoji} ${h.name}`).join(', ') + (open.length > 3 ? ' …' : '');
@@ -324,7 +330,7 @@ const Tree = (() => {
     return { title: '🌿 Fast geschafft', body: `Noch ${left} offen. Die nächste bringt +${gain}, alles zusammen +${RULES.perfect}: ${names}`, urgent: false };
   }
 
-  return { STAGES, RULES, simulate, svg, healthLabel, reminder, deltaFor, neededToSurvive };
+  return { isPaused, isDue, STAGES, RULES, simulate, svg, healthLabel, reminder, deltaFor, neededToSurvive };
 })();
 
 if (typeof module !== 'undefined') module.exports = Tree;

@@ -67,7 +67,9 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 
 /* ---------- Logik ---------- */
 
-const isScheduled = (h, d) => h.days.includes(weekdayIdx(d));
+/** Fällig an diesem Tag: Wochentag passt und die Gewohnheit ist nicht pausiert. */
+const isScheduled = (h, d) => Tree.isDue(h, keyOf(d));
+const isPausedOn = (h, k) => Tree.isPaused(h, k);
 const isDone = (h, k) => !!(state.log[h.id] && state.log[h.id][k]);
 
 function toggle(h, k) {
@@ -184,7 +186,8 @@ function renderToday() {
   $('#today-title').textContent = isToday ? 'Heute' : 'Gestern';
 
   const planned = state.habits.filter((h) => isScheduled(h, sel));
-  const other = state.habits.filter((h) => !isScheduled(h, sel));
+  const paused = state.habits.filter((h) => isPausedOn(h, selectedKey));
+  const other = state.habits.filter((h) => !isScheduled(h, sel) && !isPausedOn(h, selectedKey));
   const todo = Plan.todoStatus(state.plan, selectedKey);
   const doneCount = planned.filter((h) => isDone(h, selectedKey)).length + (todo.done ? 1 : 0);
   const plannedCount = planned.length + (todo.planned ? 1 : 0);
@@ -206,6 +209,16 @@ function renderToday() {
   else if (!todo.planned) html += `<div class="empty"><div class="big">☀️</div><p>Für diesen Tag ist nichts geplant.</p></div>`;
   if (other.length) {
     html += `<div class="section-label">Nicht geplant</div>` + other.map((h) => habitRow(h, true)).join('');
+  }
+  if (paused.length) {
+    html += `<div class="section-label">⏸ Pausiert</div>` + paused.map((h) => `<div class="habit off paused" style="--c:${h.color}">
+      <div class="emoji" aria-hidden="true">${esc(h.emoji)}</div>
+      <button type="button" class="info" data-edit="${esc(h.id)}" aria-label="${esc(h.name)} bearbeiten">
+        <div class="name">${esc(h.name)}</div>
+        <div class="meta">${pauseText(pauseOn(h, selectedKey))}</div>
+      </button>
+      <button type="button" class="btn btn-small btn-ghost" data-resume="${esc(h.id)}">Fortsetzen</button>
+    </div>`).join('');
   }
   if (plannedCount && doneCount === plannedCount) {
     html = `<div class="card" style="text-align:center">🎉 <b>${isToday ? 'Alles erledigt für heute! Dein Baum ist gegossen.' : 'Alles erledigt an diesem Tag!'}</b></div>` + html;
@@ -401,7 +414,7 @@ function renderStats() {
     return `<div class="card" style="--c:${h.color}">
       <div class="stat-head">
         <div class="emoji" aria-hidden="true">${esc(h.emoji)}</div>
-        <div class="name">${esc(h.name)}</div>
+        <div class="name">${esc(h.name)}${isPausedOn(h, todayKey()) ? ' <small class="paused-tag">⏸ pausiert</small>' : ''}</div>
         <button type="button" class="edit" data-edit="${esc(h.id)}">Bearbeiten</button>
       </div>
       <div class="nums">
@@ -453,9 +466,57 @@ function openDialog(habit, preset) {
   $('#f-emoji').value = draft.emoji;
   $('#btn-delete').hidden = !habit;
   renderDialogPickers();
+  renderPauseField(habit);
   dialog.showModal();
   if (!habit && !preset) $('#f-name').focus();
 }
+
+/* ---------- Pausieren ---------- */
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const fmtDay = (k) => new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' }).format(parseKey(k));
+/** Pause, die am Tag k gilt (oder null). */
+const pauseOn = (h, k) => (h.pauses || []).find((p) => p.from <= k && (!p.to || k <= p.to)) || null;
+const pauseText = (p) => (p.to ? `pausiert bis ${fmtDay(p.to)}` : 'pausiert, bis du sie fortsetzt');
+
+function renderPauseField(habit) {
+  const el = $('#pause-field');
+  el.hidden = !habit;
+  if (!habit) { el.innerHTML = ''; return; }
+  const p = pauseOn(habit, todayKey());
+  el.innerHTML = p
+    ? `<span>⏸ Pausiert</span>
+       <p class="muted small-gap">Seit ${fmtDay(p.from)}, ${p.to ? `bis einschließlich ${fmtDay(p.to)}` : 'bis du sie fortsetzt'}. Pausentage zählen nicht für Baum und Serie.</p>
+       <button type="button" class="btn btn-ghost" data-pause="resume">▶ Jetzt fortsetzen</button>`
+    : `<span>Pausieren <small>(z. B. bei Verletzung oder Urlaub)</small></span>
+       <div class="pause-row">
+         <label><small>bis einschließlich (optional)</small><input type="date" id="pause-until" min="${todayKey()}"></label>
+         <button type="button" class="btn btn-ghost" data-pause="start">⏸ Pausieren</button>
+       </div>`;
+}
+
+$('#pause-field').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-pause]');
+  if (!b || !editingId) return;
+  const h = state.habits.find((x) => x.id === editingId);
+  const today = todayKey();
+  if (b.dataset.pause === 'start') {
+    const until = $('#pause-until').value;
+    if (until && (!DATE_RE.test(until) || until < today)) return toast('Das Datum liegt in der Vergangenheit.');
+    h.pauses = [...(h.pauses || []), { from: today, to: until || null }];
+    toast(`⏸ ${h.name} ${until ? `bis ${fmtDay(until)} ` : ''}pausiert`);
+  } else {
+    const p = pauseOn(h, today);
+    if (!p) return;
+    // Heute begonnene Pause einfach entfernen, sonst endet sie gestern
+    if (p.from === today) h.pauses = h.pauses.filter((x) => x !== p);
+    else p.to = keyOf(addDays(parseKey(today), -1));
+    toast(`▶ ${h.name} läuft wieder`);
+  }
+  save();
+  dialog.close();
+  render();
+});
 
 function renderDialogPickers() {
   const current = $('#f-emoji').value;
@@ -563,6 +624,18 @@ document.addEventListener('click', (e) => {
       else if (isToday && s > 1 && (s % 7 === 0 || s === 3 || s === 30 || s === 100)) toast(`🔥 ${s} Tage in Folge – stark!`);
     }
     return;
+  }
+
+  const res = t.closest('[data-resume]');
+  if (res) {
+    const h = state.habits.find((x) => x.id === res.dataset.resume);
+    const p = h && pauseOn(h, todayKey());
+    if (!p) return;
+    if (p.from === todayKey()) h.pauses = h.pauses.filter((x) => x !== p);
+    else p.to = keyOf(addDays(parseKey(todayKey()), -1));
+    save();
+    render();
+    return toast(`▶ ${h.name} läuft wieder`);
   }
 
   const ed = t.closest('[data-edit]');
@@ -795,7 +868,14 @@ $('#input-import').addEventListener('change', async (e) => {
     if (!valid) throw new Error('format');
     if ((state.habits.length || state.plan.templates.length) && !confirm('Das Backup ersetzt deine aktuellen Daten. Fortfahren?')) return;
     state = {
-      habits: data.habits.map((h) => ({ ...h, color: HEX.test(h.color) ? h.color : COLORS[0], emoji: String(h.emoji || '✅') })),
+      habits: data.habits.map((h) => ({
+        ...h,
+        color: HEX.test(h.color) ? h.color : COLORS[0],
+        emoji: String(h.emoji || '✅'),
+        pauses: (Array.isArray(h.pauses) ? h.pauses : [])
+          .filter((p) => p && DATE_RE.test(p.from) && (p.to == null || DATE_RE.test(p.to)))
+          .map((p) => ({ from: p.from, to: p.to || null })),
+      })),
       log: data.log || {},
       plan: Plan.normalize(data.plan),
     };

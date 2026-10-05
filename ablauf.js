@@ -3,6 +3,19 @@
 /* ---------- Ansicht: Ablauf (Tagesplan) ---------- */
 
 let planMode = 'today'; // 'today' | 'edit'
+let planDay = null;     // angesehener Tag (Datum) oder null = heute
+const PLAN_AHEAD = 6;   // so viele Tage im Voraus planbar
+
+/** Angesehener Tag; vergangene Auswahl springt automatisch auf heute zurück. */
+const viewDay = () => (planDay && planDay > todayKey() && planDay <= Plan.addDays(todayKey(), PLAN_AHEAD) ? planDay : todayKey());
+const isViewToday = () => viewDay() === todayKey();
+const viewNow = () => (isViewToday() ? minNow() : -1);
+function dayLabel(k, long = false) {
+  const today = todayKey();
+  if (k === today) return 'Heute';
+  if (k === Plan.addDays(today, 1)) return 'Morgen';
+  return new Intl.DateTimeFormat('de-DE', long ? { weekday: 'long', day: 'numeric', month: 'short' } : { weekday: 'short' }).format(parseKey(k));
+}
 let editTplId = null;
 let editingBlock = null; // { tplId, blockId | null, cat, habitIds }
 let slotDraft = null; // { habitIds: Set, todoId }
@@ -61,7 +74,10 @@ function habitChips(ids) {
   const chips = ids.map((id) => {
     const h = state.habits.find((x) => x.id === id);
     if (!h) return '';
-    const done = isDone(h, todayKey());
+    const k = viewDay();
+    if (isPausedOn(h, k)) return `<span class="tl-habit paused" style="--hc:${h.color}"><span class="mini-check" aria-hidden="true">⏸</span>${esc(h.emoji)} ${esc(h.name)}</span>`;
+    if (k !== todayKey()) return `<span class="tl-habit planned" style="--hc:${h.color}"><span class="mini-check" aria-hidden="true"></span>${esc(h.emoji)} ${esc(h.name)}</span>`;
+    const done = isDone(h, k);
     return `<button type="button" class="tl-habit ${done ? 'on' : ''}" data-pa="habit" data-id="${esc(h.id)}" style="--hc:${h.color}" aria-pressed="${done}">
       <span class="mini-check" aria-hidden="true">${done ? '✓' : ''}</span>${esc(h.emoji)} ${esc(h.name)}</button>`;
   }).join('');
@@ -82,33 +98,37 @@ function freeGaps(items, now) {
 /** Gewohnheiten, die heute fällig sind, aber in keinem Block des Tages stehen. */
 function unplannedHabits(items) {
   const placed = new Set(items.flatMap((b) => b.habitIds));
-  const today = parseKey(todayKey());
-  return state.habits.filter((h) => isScheduled(h, today) && !placed.has(h.id));
+  const day = parseKey(viewDay());
+  return state.habits.filter((h) => isScheduled(h, day) && !placed.has(h.id));
 }
 
 function todoCard(today) {
   const plan = state.plan;
   const day = Plan.dayTodos(plan, today).sort((a, b) => a.done - b.done || (a.time || '99').localeCompare(b.time || '99'));
   const week = Plan.weekTodos(plan, today).sort((a, b) => a.done - b.done);
-  const overdue = Plan.overdueTodos(plan, today);
-  const tomorrow = Plan.dayTodos(plan, Plan.addDays(today, 1)).filter((t) => !t.done).length;
+  const isToday = today === todayKey();
+  const overdue = isToday ? Plan.overdueTodos(plan, today) : [];
+  const tomorrow = isToday ? Plan.dayTodos(plan, Plan.addDays(today, 1)).filter((t) => !t.done).length : 0;
+  const offset = Math.round((parseKey(today) - parseKey(todayKey())) / 864e5);
+  const dayOpts = [[0, 'Heute'], [1, 'Morgen'], ...(offset > 1 ? [[offset, dayLabel(today, true)]] : [])]
+    .map(([v, l]) => `<option value="${v}" ${v === offset ? 'selected' : ''}>${esc(l)}</option>`).join('');
   const st = Plan.todoStatus(plan, today);
   const badge = st.planned
     ? `<span class="todo-badge ${st.done ? 'on' : ''}">${st.done ? '🌳 Bonus geschafft' : `${st.doneCount}/${st.total} · 🌳 Bonus`}</span>`
     : '';
   return `<div class="card tasks-card">
     <div class="card-head"><h2>To-dos</h2>${badge}</div>
-    ${day.length ? day.map((t) => taskHtml(t, true)).join('') : '<p class="muted-sm hint">Für heute nichts Besonderes. Was musst du heute auf jeden Fall erledigen?</p>'}
+    ${day.length ? day.map((t) => taskHtml(t, true)).join('') : `<p class="muted-sm hint">${isToday ? 'Für heute nichts Besonderes. Was musst du heute auf jeden Fall erledigen?' : `Was willst du ${offset === 1 ? 'morgen' : 'an diesem Tag'} erledigen?`}</p>`}
     ${week.length ? `<div class="section-label todo-week">Diese Woche · bis ${shortDate(Plan.weekEnd(today))}</div>${week.map((t) => taskHtml(t, false)).join('')}` : ''}
     <form class="task-add" data-pa="add-task">
       <input id="task-title" maxlength="80" placeholder="Neues To-do, z. B. Müll rausbringen" autocomplete="off" aria-label="Neues To-do">
       <div class="task-add-row">
-        <select id="task-day" aria-label="Wann"><option value="0">Heute</option><option value="1">Morgen</option><option value="week">Diese Woche</option></select>
+        <select id="task-day" aria-label="Wann">${dayOpts}<option value="week">Diese Woche</option></select>
         <input type="time" id="task-time" aria-label="Uhrzeit (optional)">
         <button class="btn btn-small" type="submit">Hinzufügen</button>
       </div>
     </form>
-    ${st.planned ? '<p class="muted-sm hint">Alle To-dos von heute erledigt zählt für deinen Baum wie eine zusätzliche Gewohnheit.</p>' : ''}
+    ${st.planned ? '<p class="muted-sm hint">Alle To-dos des Tages erledigt zählt für deinen Baum wie eine zusätzliche Gewohnheit.</p>' : ''}
     ${tomorrow ? `<p class="muted-sm hint">Für morgen ${tomorrow === 1 ? 'ist 1 To-do' : `sind ${tomorrow} To-dos`} geplant.</p>` : ''}
     ${overdue.length ? `<div class="overdue"><div class="section-label">Liegen geblieben</div>
       ${overdue.map((t) => `<div class="task">
@@ -120,22 +140,32 @@ function todoCard(today) {
 }
 
 function renderPlanToday(el, btn) {
-  const today = todayKey();
+  const today = viewDay();
+  const isToday = today === todayKey();
   const tpl = Plan.templateFor(state.plan, today);
   const items = Plan.dayTimeline(state.plan, today);
-  const now = minNow();
+  const now = viewNow();
   const st = Plan.status(items, now);
 
-  $('#plan-eyebrow').textContent = new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+  $('#plan-eyebrow').textContent = (isToday ? '' : `Planung · `) + new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).format(parseKey(today));
+
+  // Tagesleiste: heute und die nächsten Tage
+  const strip = `<nav class="plan-days" aria-label="Tag wählen">${Array.from({ length: PLAN_AHEAD + 1 }, (_, i) => {
+    const k = Plan.addDays(todayKey(), i);
+    const t = Plan.templateFor(state.plan, k);
+    const n = Plan.dayTodos(state.plan, k).filter((x) => !x.done).length + (state.plan.dayBlocks[k] || []).length;
+    return `<button type="button" data-pa="day" data-k="${k}" aria-pressed="${k === today}">
+      <b>${esc(dayLabel(k))}</b><span>${t ? esc(t.emoji) : '🌴'}${n ? '<i></i>' : ''}</span></button>`;
+  }).join('')}</nav>`;
   $('#plan-title').textContent = tpl ? `${tpl.emoji} ${tpl.name}` : '🌴 Freier Tag';
   btn.textContent = 'Bearbeiten';
 
   // Heute ein anderer Tagestyp?
-  const stdId = state.plan.weekdays[weekdayIdx(new Date())];
+  const stdId = state.plan.weekdays[weekdayIdx(parseKey(today))];
   const std = findTpl(stdId);
   const override = state.plan.overrides[today] || '';
-  const switcher = `<label class="day-switch"><span>Heute:</span>
-    <select data-pa="override" aria-label="Tagestyp für heute">
+  const switcher = `<label class="day-switch"><span>${isToday ? 'Heute' : esc(dayLabel(today))}:</span>
+    <select data-pa="override" aria-label="Tagestyp für diesen Tag">
       <option value="" ${!override ? 'selected' : ''}>Wie immer (${std ? esc(std.name) : 'frei'})</option>
       ${state.plan.templates.filter((t) => t.id !== stdId).map((t) => `<option value="${esc(t.id)}" ${override === t.id ? 'selected' : ''}>${esc(t.emoji)} ${esc(t.name)}</option>`).join('')}
       ${stdId ? `<option value="none" ${override === 'none' ? 'selected' : ''}>🌴 Freier Tag</option>` : ''}
@@ -143,7 +173,19 @@ function renderPlanToday(el, btn) {
 
   // Karte: Was ist jetzt dran?
   let nowCard = '';
-  if (st.current) {
+  if (!isToday) {
+    // Planungsübersicht statt Live-Status
+    const gaps = freeGaps(items, -1);
+    const free = gaps.reduce((sum, g) => sum + (g.e - g.s), 0);
+    const todos = Plan.dayTodos(state.plan, today).length;
+    const first = items[0];
+    nowCard = `<div class="now-card plan-card" style="--c:#7c3aed">
+      <div class="now-label">Planung für ${esc(dayLabel(today, true))}</div>
+      <div class="now-title">${first ? `${esc(blockEmoji(first))} Start um ${first.start}` : '🌴 Noch nichts geplant'}</div>
+      <div class="now-meta">${items.length} Blöcke · ${durText(free)} freie Zeit · ${todos} To-do${todos === 1 ? '' : 's'}</div>
+      <div class="now-next">Tippe bei freier Zeit auf <b>+ Einplanen</b>, um Gewohnheiten, To-dos oder Termine für diesen Tag festzulegen.</div>
+    </div>`;
+  } else if (st.current) {
     const c = st.current;
     const total = c.e !== null ? c.e - c.s : null;
     const pct = total ? Math.min(100, Math.round(((now - c.s) / total) * 100)) : null;
@@ -191,7 +233,7 @@ function renderPlanToday(el, btn) {
   ].sort((a, b) => a.m - b.m || (a.kind === 'block' ? -1 : 1));
 
   let tl = '';
-  let nowPlaced = !!st.current;
+  let nowPlaced = !isToday || !!st.current; // Jetzt-Linie nur heute
   let lastEnd = null;
   const nowLine = `<li class="tl-now" id="tl-now"><span>${Plan.fmt(now)}</span></li>`;
   for (const r of rows) {
@@ -229,10 +271,10 @@ function renderPlanToday(el, btn) {
 
   const timelineHtml = rows.length
     ? `<ol class="timeline">${tl}</ol>`
-    : `<div class="empty"><div class="big">🌴</div><p>${tpl ? 'Dieser Tagestyp hat noch keine Zeitblöcke.' : 'Heute ist kein Ablauf geplant. Genieß den Tag!'}</p>
-       <button type="button" class="btn btn-ghost" data-pa="fill-gap" data-s="${Math.ceil(now / 15) * 15}" data-e="${Math.ceil(now / 15) * 15 + 60}">+ Etwas einplanen</button></div>`;
+    : `<div class="empty"><div class="big">🌴</div><p>${tpl ? 'Dieser Tagestyp hat noch keine Zeitblöcke.' : `${isToday ? 'Heute' : 'An diesem Tag'} ist kein Ablauf geplant. Genieß den Tag!`}</p>
+       <button type="button" class="btn btn-ghost" data-pa="fill-gap" data-s="${now < 0 ? 540 : Math.ceil(now / 15) * 15}" data-e="${(now < 0 ? 540 : Math.ceil(now / 15) * 15) + 60}">+ Etwas einplanen</button></div>`;
 
-  el.innerHTML = switcher + nowCard + todoCard(today) + unplannedHtml + `<div class="section-label">Dein Tag</div>` + timelineHtml;
+  el.innerHTML = strip + switcher + nowCard + todoCard(today) + unplannedHtml + `<div class="section-label">Dein Tag</div>` + timelineHtml;
 }
 
 /* ----- Bearbeiten: Tagestypen, Wochentage, Zeitblöcke ----- */
@@ -376,19 +418,20 @@ const slotDialog = $('#slot-dialog');
 const roundUp = (m, step) => Math.ceil(m / step) * step;
 
 function openSlotDialog(gapS, gapE, habitId) {
-  const now = minNow();
+  const now = viewNow();
   const start = gapS <= now && now < gapE ? Math.min(roundUp(now, 5), gapE - 5) : gapS;
   const end = Math.min(gapE, start + 30);
-  const items = Plan.dayTimeline(state.plan, todayKey());
+  const items = Plan.dayTimeline(state.plan, viewDay());
   const unplanned = unplannedHabits(items).map((h) => h.id);
   slotDraft = { habitIds: new Set(habitId ? [habitId] : []), todoId: null };
-  $('#slot-sub').textContent = gapE > gapS ? `Freie Zeit von ${Plan.fmt(gapS)} bis ${Plan.fmt(gapE % 1440)} · gilt nur für heute` : 'Gilt nur für heute';
+  const only = isViewToday() ? 'gilt nur für heute' : `gilt nur für ${dayLabel(viewDay(), true)}`;
+  $('#slot-sub').textContent = gapE > gapS ? `Freie Zeit von ${Plan.fmt(gapS)} bis ${Plan.fmt(gapE % 1440)} · ${only}` : only[0].toUpperCase() + only.slice(1);
   $('#s-start').value = Plan.fmt(start % 1440);
   $('#s-end').value = Plan.fmt(end % 1440);
   $('#s-custom').value = '';
   renderHabitPick('#s-habits', slotDraft.habitIds, unplanned);
   $('#s-habits-field').hidden = !state.habits.length;
-  const today = todayKey();
+  const today = viewDay();
   const todos = [...Plan.dayTodos(state.plan, today).filter((t) => !t.done && !t.time), ...Plan.weekTodos(state.plan, today).filter((t) => !t.done)];
   $('#s-todos').innerHTML = todos.map((t) => `<button type="button" data-tpick="${esc(t.id)}" aria-pressed="false">📝 ${esc(t.title)}</button>`).join('');
   $('#s-todos-field').hidden = !todos.length;
@@ -420,7 +463,7 @@ $('#slot-form').addEventListener('submit', (e) => {
   if (!Plan.TIME.test(start)) return toast('Bitte eine Startzeit wählen.');
   if (!habits.length && !todo && !custom) return toast('Wähle eine Gewohnheit, ein To-do oder schreib etwas hinein.');
 
-  const today = todayKey();
+  const today = viewDay();
   const list = state.plan.dayBlocks[today] || (state.plan.dayBlocks[today] = []);
   if (todo && !todo.week && !habits.length && !custom) {
     // Ein Tages-To-do bekommt einfach eine Uhrzeit und erscheint so in der Zeitleiste
@@ -436,12 +479,12 @@ $('#slot-form').addEventListener('submit', (e) => {
     if (todo && !todo.week) todo.time = start;
   }
   // Alte Tagespläne aufräumen
-  const cutoff = Plan.addDays(today, -14);
+  const cutoff = Plan.addDays(todayKey(), -14);
   for (const k of Object.keys(state.plan.dayBlocks)) if (k < cutoff || !state.plan.dayBlocks[k].length) delete state.plan.dayBlocks[k];
   save();
   slotDialog.close();
   renderPlan();
-  toast('Für heute eingeplant');
+  toast(`Für ${isViewToday() ? 'heute' : dayLabel(viewDay(), true)} eingeplant`);
 });
 $('#btn-slot-cancel').addEventListener('click', () => slotDialog.close());
 slotDialog.addEventListener('click', (e) => { if (e.target === slotDialog) slotDialog.close(); });
@@ -500,16 +543,21 @@ $('#plan-content').addEventListener('click', (e) => {
       if (t) { t.date = todayKey(); t.time = null; t.week = false; save(); toast('Auf heute verschoben'); }
       break;
     }
+    case 'day':
+      planDay = a.dataset.k === todayKey() ? null : a.dataset.k;
+      renderPlan();
+      if (!planDay) scrollToNow();
+      return;
     case 'fill-gap':
       return openSlotDialog(Number(a.dataset.s), Number(a.dataset.e), null);
     case 'plan-habit': {
-      const now = minNow();
-      const gap = freeGaps(Plan.dayTimeline(plan, todayKey()), now)[0];
-      const s0 = roundUp(now, 15);
+      const now = viewNow();
+      const gap = freeGaps(Plan.dayTimeline(plan, viewDay()), now)[0];
+      const s0 = now < 0 ? 9 * 60 : roundUp(now, 15);
       return gap ? openSlotDialog(gap.s, gap.e, id) : openSlotDialog(s0, s0 + 30, id);
     }
     case 'del-oneoff': {
-      const k = todayKey();
+      const k = viewDay();
       plan.dayBlocks[k] = (plan.dayBlocks[k] || []).filter((b) => b.id !== id);
       save();
       break;
@@ -576,8 +624,8 @@ $('#plan-content').addEventListener('change', (e) => {
   const plan = state.plan;
   if (pa === 'override') {
     const v = e.target.value;
-    if (v) plan.overrides[todayKey()] = v;
-    else delete plan.overrides[todayKey()];
+    if (v) plan.overrides[viewDay()] = v;
+    else delete plan.overrides[viewDay()];
     // Alte Ausnahmen aufräumen
     for (const k of Object.keys(plan.overrides)) if (k < keyOf(addDays(new Date(), -7))) delete plan.overrides[k];
     save();
