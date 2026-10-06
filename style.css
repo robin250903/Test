@@ -591,3 +591,22 @@ dialog h2 { font-size: 20px; margin-bottom: 16px; }
 .skipped { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -6px 0 18px 74px; }
 .skipped-chip { border: 1px dashed var(--border); background: transparent; border-radius: 999px; padding: 4px 10px; font-size: 13px; color: var(--muted); text-decoration: line-through; }
 .skipped-chip b { text-decoration: none; display: inline-block; margin-left: 4px; color: var(--text); }
+
+/* To-dos in Blöcken */
+.tl-add { display: inline-block; margin-top: 8px; border: 1px dashed var(--border); background: none; color: var(--muted); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.tl-item.past .tl-add { display: none; }
+.block-todos { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 2px; }
+.block-todos .task { padding: 4px 0; }
+.block-todos .task-check { width: 22px; height: 22px; border-radius: 7px; font-size: 13px; }
+.block-todos .task-title { font-size: 14px; }
+.task-where { font-size: 12px; color: #7c3aed; font-weight: 600; }
+.task-pin { border: 0; background: none; font-size: 16px; padding: 4px; flex: none; opacity: 0.75; }
+.place-list { display: grid; gap: 6px; max-height: 45vh; overflow-y: auto; margin-bottom: 12px; }
+.place-list button { display: flex; gap: 10px; align-items: center; text-align: left; border: 1px solid var(--border); border-left: 4px solid var(--c); background: var(--surface); border-radius: 12px; padding: 10px 12px; font-size: 15px; }
+.place-list button[aria-pressed="true"] { background: color-mix(in srgb, var(--c) 14%, var(--surface)); border-color: var(--c); }
+.place-list .block-time { width: auto; font-size: 13px; }
+.place-time { display: flex; gap: 8px; align-items: flex-end; }
+.place-time .field { flex: 1; margin-bottom: 0; }
+.place-time .btn { flex: none; }
+#att-todos button[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
+#att-todos small { font-weight: 400; opacity: 0.8; }

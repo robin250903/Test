@@ -61,12 +61,24 @@ function renderPlan() {
 
 const shortDate = (k) => new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' }).format(parseKey(k));
 
-function taskHtml(t, showTime) {
+/** Block, in dem ein To-do am angesehenen Tag erledigt werden soll (oder null). */
+function slotBlock(t) {
+  if (!t.slot || t.slot.date !== viewDay()) return null;
+  return Plan.dayTimeline(state.plan, viewDay()).find((b) => b.id === t.slot.blockId) || null;
+}
+
+function taskHtml(t, showTime, inBlock = false) {
+  const blk = inBlock ? null : slotBlock(t);
+  const where = blk
+    ? `<span class="task-where">📍 ${esc(blk.title)} · ${blk.start}</span>`
+    : showTime && t.time ? `<span class="task-time">${t.time}</span>` : '';
   return `<div class="task ${t.done ? 'done' : ''}">
     <button type="button" class="task-check" data-pa="task-toggle" data-id="${esc(t.id)}" aria-pressed="${t.done}" aria-label="${esc(t.title)} ${t.done ? 'als offen markieren' : 'erledigt'}">${t.done ? '✓' : ''}</button>
-    <span class="task-title">${esc(t.title)}</span>
-    ${showTime && t.time ? `<span class="task-time">${t.time}</span>` : ''}
-    <button type="button" class="task-del" data-pa="task-del" data-id="${esc(t.id)}" aria-label="To-do löschen">×</button>
+    <span class="task-title">${esc(t.title)}${where ? `<br>${where}` : ''}</span>
+    ${inBlock
+      ? `<button type="button" class="task-del" data-pa="todo-unslot" data-id="${esc(t.id)}" aria-label="Aus diesem Block nehmen" title="Aus dem Block nehmen">↩</button>`
+      : `${t.done ? '' : `<button type="button" class="task-pin" data-pa="todo-place" data-id="${esc(t.id)}" aria-label="In einem Block einplanen">📍</button>`}
+         <button type="button" class="task-del" data-pa="task-del" data-id="${esc(t.id)}" aria-label="To-do löschen">×</button>`}
   </div>`;
 }
 
@@ -226,7 +238,7 @@ function renderPlanToday(el, btn) {
     </div>` : '';
 
   // Zeitleiste: Blöcke und To-dos mit Uhrzeit, dazu freie Lücken und die Jetzt-Linie
-  const timedTodos = Plan.dayTodos(state.plan, today).filter((t) => t.time);
+  const timedTodos = Plan.dayTodos(state.plan, today).filter((t) => t.time && !(t.slot && t.slot.date === today));
   const rows = [
     ...items.map((b) => ({ m: b.s, kind: 'block', b })),
     ...timedTodos.map((t) => ({ m: Plan.toMin(t.time), kind: 'task', t })),
@@ -266,6 +278,8 @@ function renderPlanToday(el, btn) {
         </button>
         ${isPast ? '' : stepsHtml(b.steps)}
         ${habitChips(b.habitIds)}
+        ${(() => { const td = Plan.blockTodos(state.plan, today, b.id); return td.length ? `<div class="block-todos">${td.map((t) => taskHtml(t, false, true)).join('')}</div>` : ''; })()}
+        <button type="button" class="tl-add" data-pa="attach" data-id="${esc(b.id)}">＋ To-do / Gewohnheit</button>
       </div>
     </li>`;
   }
@@ -550,8 +564,8 @@ function setBlockTimes(day, id, start, end) {
 
 function cleanupDayEdits() {
   const cutoff = Plan.addDays(todayKey(), -14);
-  for (const k of Object.keys(state.plan.dayEdits)) {
-    if (k < cutoff || !Object.keys(state.plan.dayEdits[k]).length) delete state.plan.dayEdits[k];
+  for (const map of [state.plan.dayEdits, state.plan.dayHabits]) {
+    for (const k of Object.keys(map)) if (k < cutoff || !Object.keys(map[k]).length) delete map[k];
   }
 }
 
@@ -617,6 +631,114 @@ $('#btn-adj-template').addEventListener('click', () => {
 });
 adjustDialog.addEventListener('click', (e) => { if (e.target === adjustDialog) adjustDialog.close(); });
 
+/* ----- Dialog: To-dos und Gewohnheiten in einen Block legen ----- */
+
+const attachDialog = $('#attach-dialog');
+const placeDialog = $('#place-dialog');
+let attaching = null; // { day, blockId, todos: Set, habits: Set }
+let placing = null;   // { id }
+
+function openAttachDialog(blockId) {
+  const day = viewDay();
+  const b = Plan.dayTimeline(state.plan, day).find((x) => x.id === blockId);
+  if (!b) return;
+  const todos = [...Plan.dayTodos(state.plan, day), ...Plan.weekTodos(state.plan, day)].filter((t) => !t.done);
+  const fixed = new Set(b.habitIds.filter((id) => !(b.dayHabitIds || []).includes(id))); // dauerhaft im Block
+  const habits = state.habits.filter((h) => isScheduled(h, parseKey(day)) && !fixed.has(h.id));
+  attaching = {
+    day, blockId,
+    todos: new Set(todos.filter((t) => t.slot && t.slot.date === day && t.slot.blockId === blockId).map((t) => t.id)),
+    habits: new Set(b.dayHabitIds || []),
+  };
+  $('#att-title').textContent = `${blockEmoji(b)} ${b.title}`;
+  $('#att-sub').textContent = `${b.start}${b.e !== null ? '–' + Plan.fmt(b.e % 1440) : ''} · Was willst du ${isViewToday() ? 'heute' : 'an diesem Tag'} hier erledigen?`;
+  $('#att-todos').innerHTML = todos.map((t) => {
+    const other = t.slot && t.slot.date === day && t.slot.blockId !== blockId ? slotBlock(t) : null;
+    return `<button type="button" data-att-todo="${esc(t.id)}" aria-pressed="${attaching.todos.has(t.id)}">📝 ${esc(t.title)}${other ? ` <small>(jetzt: ${esc(other.title)})</small>` : ''}</button>`;
+  }).join('');
+  $('#att-todos-field').hidden = !todos.length;
+  $('#att-habits').innerHTML = habits.map((h) => `<button type="button" data-att-habit="${esc(h.id)}" style="--hc:${h.color}" aria-pressed="${attaching.habits.has(h.id)}">${esc(h.emoji)} ${esc(h.name)}</button>`).join('');
+  $('#att-habits-field').hidden = !habits.length;
+  $('#att-new').value = '';
+  attachDialog.showModal();
+}
+
+$('#attach-form').addEventListener('click', (e) => {
+  const t = e.target.closest('[data-att-todo]');
+  const h = e.target.closest('[data-att-habit]');
+  if (!t && !h) return;
+  const set = t ? attaching.todos : attaching.habits;
+  const id = t ? t.dataset.attTodo : h.dataset.attHabit;
+  if (set.has(id)) set.delete(id); else set.add(id);
+  (t || h).setAttribute('aria-pressed', set.has(id));
+});
+
+$('#attach-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const { day, blockId, todos, habits } = attaching;
+  const plan = state.plan;
+  for (const t of plan.tasks) {
+    const here = t.slot && t.slot.date === day && t.slot.blockId === blockId;
+    if (todos.has(t.id) && !here) { t.slot = { date: day, blockId }; t.time = null; }
+    else if (!todos.has(t.id) && here) t.slot = null;
+  }
+  const title = $('#att-new').value.trim().slice(0, 80);
+  if (title) plan.tasks.push({ id: Plan.newId(), date: day, title, time: null, done: false, week: false, slot: { date: day, blockId } });
+  const map = plan.dayHabits[day] || (plan.dayHabits[day] = {});
+  if (habits.size) map[blockId] = [...habits]; else delete map[blockId];
+  if (!Object.keys(map).length) delete plan.dayHabits[day];
+  cleanupDayEdits();
+  save();
+  attachDialog.close();
+  renderPlan();
+  toast('Im Block eingeplant');
+});
+$('#btn-att-cancel').addEventListener('click', () => attachDialog.close());
+attachDialog.addEventListener('click', (e) => { if (e.target === attachDialog) attachDialog.close(); });
+
+function openPlaceDialog(todoId) {
+  const t = state.plan.tasks.find((x) => x.id === todoId);
+  if (!t) return;
+  placing = { id: todoId };
+  const day = viewDay();
+  const now = viewNow();
+  const blocks = Plan.dayTimeline(state.plan, day).filter((b) => b.e === null || b.e > now);
+  $('#place-title').textContent = `„${t.title}“ einplanen`;
+  $('#place-blocks').innerHTML = blocks.length
+    ? blocks.map((b) => `<button type="button" data-place="${esc(b.id)}" style="--c:${catOf(b).color}" aria-pressed="${!!(t.slot && t.slot.date === day && t.slot.blockId === b.id)}">
+        <span class="block-time">${b.start}</span><span>${esc(blockEmoji(b))} ${esc(b.title)}</span></button>`).join('')
+    : '<p class="muted-sm">Für den Rest des Tages gibt es keine Blöcke mehr.</p>';
+  $('#place-time').value = t.time || '';
+  placeDialog.showModal();
+}
+
+function placeTodo(fn, msg) {
+  const t = state.plan.tasks.find((x) => x.id === placing.id);
+  if (t) fn(t);
+  save();
+  placeDialog.close();
+  renderPlan();
+  if (msg) toast(msg);
+}
+
+$('#place-blocks').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-place]');
+  if (!b) return;
+  const blk = Plan.dayTimeline(state.plan, viewDay()).find((x) => x.id === b.dataset.place);
+  placeTodo((t) => { t.slot = { date: viewDay(), blockId: b.dataset.place }; t.time = null; }, `📍 In „${blk ? blk.title : 'Block'}“ eingeplant`);
+});
+$('#btn-place-time').addEventListener('click', () => {
+  const v = $('#place-time').value;
+  if (!Plan.TIME.test(v)) return toast('Bitte eine Uhrzeit wählen.');
+  placeTodo((t) => {
+    t.slot = null; t.time = v;
+    if (t.week) { t.week = false; t.date = viewDay(); } // Wochen-To-do wird zum festen Termin an diesem Tag
+  }, `Für ${v} Uhr eingeplant`);
+});
+$('#btn-place-none').addEventListener('click', () => placeTodo((t) => { t.slot = null; t.time = null; }, 'Nicht mehr eingeplant'));
+$('#btn-place-cancel').addEventListener('click', () => placeDialog.close());
+placeDialog.addEventListener('click', (e) => { if (e.target === placeDialog) placeDialog.close(); });
+
 /* ----- Ereignisse ----- */
 
 $('#plan-head-btn').addEventListener('click', () => {
@@ -668,7 +790,7 @@ $('#plan-content').addEventListener('click', (e) => {
       break;
     case 'task-today': {
       const t = plan.tasks.find((x) => x.id === id);
-      if (t) { t.date = todayKey(); t.time = null; t.week = false; save(); toast('Auf heute verschoben'); }
+      if (t) { t.date = todayKey(); t.time = null; t.week = false; t.slot = null; save(); toast('Auf heute verschoben'); }
       break;
     }
     case 'day':
@@ -678,6 +800,15 @@ $('#plan-content').addEventListener('click', (e) => {
       return;
     case 'adjust':
       return openAdjustDialog(id);
+    case 'attach':
+      return openAttachDialog(id);
+    case 'todo-place':
+      return openPlaceDialog(id);
+    case 'todo-unslot': {
+      const t = plan.tasks.find((x) => x.id === id);
+      if (t) { t.slot = null; save(); toast('Aus dem Block genommen'); }
+      break;
+    }
     case 'reset-day':
       if (!confirm('Alle verschobenen und ausgelassenen Blöcke dieses Tages auf den Tagestyp zurücksetzen?')) return;
       delete plan.dayEdits[viewDay()];
@@ -815,6 +946,6 @@ setInterval(() => {
   if (currentView !== 'plan' || planMode !== 'today' || document.hidden) return;
   const active = document.activeElement;
   if (active && active.closest('#plan-content') && /INPUT|SELECT|TEXTAREA/.test(active.tagName)) return;
-  if (blockDialog.open || slotDialog.open || adjustDialog.open) return;
+  if (blockDialog.open || slotDialog.open || adjustDialog.open || attachDialog.open || placeDialog.open) return;
   renderPlan();
 }, 30 * 1000);

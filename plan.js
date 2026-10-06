@@ -30,7 +30,7 @@ const Plan = (() => {
   const idOk = (v) => typeof v === 'string' && /^[\w-]{1,40}$/.test(v);
   const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-  const empty = () => ({ templates: [], weekdays: [null, null, null, null, null, null, null], overrides: {}, tasks: [], dayBlocks: {}, dayEdits: {} });
+  const empty = () => ({ templates: [], weekdays: [null, null, null, null, null, null, null], overrides: {}, tasks: [], dayBlocks: {}, dayEdits: {}, dayHabits: {} });
 
   const addDays = (k, n) => { const d = parseKey(k); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
   /** Sonntag der Woche, in der das Datum liegt (Woche Mo–So). */
@@ -72,6 +72,8 @@ const Plan = (() => {
     if (Array.isArray(p.tasks)) {
       out.tasks = p.tasks.filter((t) => t && idOk(t.id) && DATE.test(t.date)).slice(-500).map((t) => ({
         id: t.id, date: t.date, title: str(t.title, 80) || 'Aufgabe', time: TIME.test(t.time) ? t.time : null, done: !!t.done, week: !!t.week,
+        // In einem Block erledigen: { date, blockId }
+        slot: t.slot && DATE.test(t.slot.date) && idOk(t.slot.blockId) ? { date: t.slot.date, blockId: t.slot.blockId } : null,
       }));
     }
     // Anpassungen von Tagestyp-Blöcken nur für einen Tag: { datum: { blockId: { start, end } | { skip: true } } }
@@ -85,6 +87,17 @@ const Plan = (() => {
           else if (TIME.test(e.start)) day[id] = { start: e.start, end: TIME.test(e.end) && e.end !== e.start ? e.end : null };
         }
         if (Object.keys(day).length) out.dayEdits[k] = day;
+      }
+    }
+    // Gewohnheiten, die nur an einem Tag in einen Block gelegt wurden: { datum: { blockId: [habitId] } }
+    if (p.dayHabits && typeof p.dayHabits === 'object') {
+      for (const [k, map] of Object.entries(p.dayHabits)) {
+        if (!DATE.test(k) || !map || typeof map !== 'object') continue;
+        const day = {};
+        for (const [id, list] of Object.entries(map)) {
+          if (idOk(id) && Array.isArray(list)) { const ids = [...new Set(list.filter(idOk))].slice(0, 10); if (ids.length) day[id] = ids; }
+        }
+        if (Object.keys(day).length) out.dayHabits[k] = day;
       }
     }
     if (p.dayBlocks && typeof p.dayBlocks === 'object') {
@@ -134,7 +147,15 @@ const Plan = (() => {
       .map((b) => (edits[b.id] ? { ...b, start: edits[b.id].start, end: edits[b.id].end, orig: { start: b.start, end: b.end } } : b));
     return { ...tpl, blocks };
   }
-  const dayTimeline = (plan, dateK) => timeline(adjustedTemplate(plan, dateK), plan.dayBlocks[dateK] || []);
+  function dayTimeline(plan, dateK) {
+    const extra = plan.dayHabits[dateK] || {};
+    return timeline(adjustedTemplate(plan, dateK), plan.dayBlocks[dateK] || []).map((b) => {
+      const add = (extra[b.id] || []).filter((id) => !b.habitIds.includes(id));
+      return add.length ? { ...b, habitIds: [...b.habitIds, ...add], dayHabitIds: add } : b;
+    });
+  }
+  /** To-dos, die an diesem Tag in einem bestimmten Block erledigt werden sollen. */
+  const blockTodos = (plan, dateK, blockId) => plan.tasks.filter((t) => t.slot && t.slot.date === dateK && t.slot.blockId === blockId);
   /** Blöcke des Tagestyps, die an diesem Tag ausgelassen werden. */
   const skippedBlocks = (plan, dateK) => {
     const tpl = templateFor(plan, dateK);
@@ -214,7 +235,7 @@ const Plan = (() => {
 
   return {
     CATEGORIES, TIME, empty, normalize, templateFor, timeline, dayTimeline, skippedBlocks, status, summary, starter, toMin, fmt, newId,
-    dayTodos, weekTodos, overdueTodos, todoStatus, weekEnd, addDays,
+    dayTodos, weekTodos, overdueTodos, todoStatus, weekEnd, addDays, blockTodos,
   };
 })();
 

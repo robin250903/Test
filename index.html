@@ -221,6 +221,36 @@
     </form>
   </dialog>
 
+  <dialog id="attach-dialog">
+    <form method="dialog" id="attach-form">
+      <h2 id="att-title">In diesem Block erledigen</h2>
+      <p class="muted" id="att-sub"></p>
+      <div class="field" id="att-todos-field"><span>To-dos</span><div class="habit-pick" id="att-todos"></div></div>
+      <label class="field"><span>Neues To-do direkt hier</span><input id="att-new" maxlength="80" autocomplete="off" placeholder="z. B. E-Mail an Prof schreiben"></label>
+      <div class="field" id="att-habits-field"><span>Gewohnheiten <small>(nur für diesen Tag)</small></span><div class="habit-pick" id="att-habits"></div></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-att-cancel">Abbrechen</button>
+        <button type="submit" class="btn">Übernehmen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="place-dialog">
+    <form method="dialog" id="place-form">
+      <h2 id="place-title">To-do einplanen</h2>
+      <p class="muted">In welchem Block willst du es erledigen?</p>
+      <div class="place-list" id="place-blocks"></div>
+      <div class="place-time">
+        <label class="field"><span>Oder zu einer festen Uhrzeit</span><input type="time" id="place-time"></label>
+        <button type="button" class="btn btn-ghost" id="btn-place-time">Uhrzeit setzen</button>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-place-none">Nicht einplanen</button>
+        <button type="button" class="btn" id="btn-place-cancel">Schließen</button>
+      </div>
+    </form>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="tree.js"></script>
