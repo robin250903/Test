@@ -30,7 +30,7 @@ const Plan = (() => {
   const idOk = (v) => typeof v === 'string' && /^[\w-]{1,40}$/.test(v);
   const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-  const empty = () => ({ templates: [], weekdays: [null, null, null, null, null, null, null], overrides: {}, tasks: [], dayBlocks: {} });
+  const empty = () => ({ templates: [], weekdays: [null, null, null, null, null, null, null], overrides: {}, tasks: [], dayBlocks: {}, dayEdits: {} });
 
   const addDays = (k, n) => { const d = parseKey(k); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
   /** Sonntag der Woche, in der das Datum liegt (Woche Mo–So). */
@@ -74,6 +74,19 @@ const Plan = (() => {
         id: t.id, date: t.date, title: str(t.title, 80) || 'Aufgabe', time: TIME.test(t.time) ? t.time : null, done: !!t.done, week: !!t.week,
       }));
     }
+    // Anpassungen von Tagestyp-Blöcken nur für einen Tag: { datum: { blockId: { start, end } | { skip: true } } }
+    if (p.dayEdits && typeof p.dayEdits === 'object') {
+      for (const [k, edits] of Object.entries(p.dayEdits)) {
+        if (!DATE.test(k) || !edits || typeof edits !== 'object') continue;
+        const day = {};
+        for (const [id, e] of Object.entries(edits)) {
+          if (!idOk(id) || !e || typeof e !== 'object') continue;
+          if (e.skip) day[id] = { skip: true };
+          else if (TIME.test(e.start)) day[id] = { start: e.start, end: TIME.test(e.end) && e.end !== e.start ? e.end : null };
+        }
+        if (Object.keys(day).length) out.dayEdits[k] = day;
+      }
+    }
     if (p.dayBlocks && typeof p.dayBlocks === 'object') {
       for (const [k, list] of Object.entries(p.dayBlocks)) {
         if (DATE.test(k) && Array.isArray(list)) out.dayBlocks[k] = list.filter(validBlock).slice(0, 30).map(normBlock);
@@ -111,7 +124,23 @@ const Plan = (() => {
   }
 
   /** Zeitleiste eines Tages: Tagestyp plus nur für diesen Tag eingeplante Blöcke. */
-  const dayTimeline = (plan, dateK) => timeline(templateFor(plan, dateK), plan.dayBlocks[dateK] || []);
+  /** Tagestyp-Blöcke mit den Anpassungen für diesen Tag (verschoben/ausgelassen). */
+  function adjustedTemplate(plan, dateK) {
+    const tpl = templateFor(plan, dateK);
+    if (!tpl) return null;
+    const edits = plan.dayEdits[dateK] || {};
+    const blocks = tpl.blocks
+      .filter((b) => !(edits[b.id] && edits[b.id].skip))
+      .map((b) => (edits[b.id] ? { ...b, start: edits[b.id].start, end: edits[b.id].end, orig: { start: b.start, end: b.end } } : b));
+    return { ...tpl, blocks };
+  }
+  const dayTimeline = (plan, dateK) => timeline(adjustedTemplate(plan, dateK), plan.dayBlocks[dateK] || []);
+  /** Blöcke des Tagestyps, die an diesem Tag ausgelassen werden. */
+  const skippedBlocks = (plan, dateK) => {
+    const tpl = templateFor(plan, dateK);
+    const edits = plan.dayEdits[dateK] || {};
+    return tpl ? tpl.blocks.filter((b) => edits[b.id] && edits[b.id].skip) : [];
+  };
 
   /* ---------- To-dos ---------- */
 
@@ -184,7 +213,7 @@ const Plan = (() => {
   }
 
   return {
-    CATEGORIES, TIME, empty, normalize, templateFor, timeline, dayTimeline, status, summary, starter, toMin, fmt, newId,
+    CATEGORIES, TIME, empty, normalize, templateFor, timeline, dayTimeline, skippedBlocks, status, summary, starter, toMin, fmt, newId,
     dayTodos, weekTodos, overdueTodos, todoStatus, weekEnd, addDays,
   };
 })();

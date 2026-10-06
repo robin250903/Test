@@ -576,3 +576,18 @@ dialog h2 { font-size: 20px; margin-bottom: 16px; }
 .small-gap { margin: 4px 0 10px; }
 .habit.paused .btn { flex: none; }
 .paused-tag { font-size: 12px; font-weight: 600; color: var(--muted); }
+
+/* Block für einen Tag anpassen */
+.tl-main { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.tl-card.one-off .tl-main { padding-right: 24px; }
+.moved { color: #7c3aed; font-weight: 600; }
+.shift-row { display: grid; grid-template-columns: repeat(4, 1fr) 1.4fr; gap: 6px; margin-bottom: 14px; }
+.shift-row button { border: 1px solid var(--border); background: var(--surface-2); border-radius: 10px; padding: 10px 0; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.check-row { display: flex; align-items: center; gap: 10px; font-size: 15px; margin: -4px 0 14px; }
+.check-row input { width: 20px; height: 20px; accent-color: var(--text); }
+.adj-more { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; margin-top: 10px; }
+.adj-more .link-btn { margin: 0; }
+.danger-link { color: var(--danger) !important; }
+.skipped { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -6px 0 18px 74px; }
+.skipped-chip { border: 1px dashed var(--border); background: transparent; border-radius: 999px; padding: 4px 10px; font-size: 13px; color: var(--muted); text-decoration: line-through; }
+.skipped-chip b { text-decoration: none; display: inline-block; margin-left: 4px; color: var(--text); }

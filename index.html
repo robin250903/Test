@@ -193,6 +193,34 @@
     </form>
   </dialog>
 
+  <dialog id="adjust-dialog">
+    <form method="dialog" id="adjust-form">
+      <h2 id="adj-title">Block anpassen</h2>
+      <p class="muted" id="adj-sub"></p>
+      <div class="shift-row" id="adj-shifts">
+        <button type="button" data-shift="-30">−30</button>
+        <button type="button" data-shift="-15">−15</button>
+        <button type="button" data-shift="15">+15</button>
+        <button type="button" data-shift="30">+30</button>
+        <button type="button" data-shift="60">+60 Min</button>
+      </div>
+      <div class="time-row two">
+        <label class="field"><span>Von</span><input type="time" id="adj-start" required></label>
+        <label class="field"><span>Bis</span><input type="time" id="adj-end"></label>
+      </div>
+      <label class="check-row"><input type="checkbox" id="adj-follow"> Alle folgenden Blöcke mitverschieben</label>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-adj-cancel">Abbrechen</button>
+        <button type="submit" class="btn">Übernehmen</button>
+      </div>
+      <div class="adj-more">
+        <button type="button" class="link-btn" id="btn-adj-reset" hidden>↺ Zeiten aus dem Tagestyp</button>
+        <button type="button" class="link-btn danger-link" id="btn-adj-skip">Auslassen</button>
+        <button type="button" class="link-btn" id="btn-adj-template" hidden>Im Tagestyp dauerhaft ändern</button>
+      </div>
+    </form>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="tree.js"></script>

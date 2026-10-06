@@ -153,7 +153,7 @@ function renderPlanToday(el, btn) {
   const strip = `<nav class="plan-days" aria-label="Tag wählen">${Array.from({ length: PLAN_AHEAD + 1 }, (_, i) => {
     const k = Plan.addDays(todayKey(), i);
     const t = Plan.templateFor(state.plan, k);
-    const n = Plan.dayTodos(state.plan, k).filter((x) => !x.done).length + (state.plan.dayBlocks[k] || []).length;
+    const n = Plan.dayTodos(state.plan, k).filter((x) => !x.done).length + (state.plan.dayBlocks[k] || []).length + Object.keys(state.plan.dayEdits[k] || {}).length;
     return `<button type="button" data-pa="day" data-k="${k}" aria-pressed="${k === today}">
       <b>${esc(dayLabel(k))}</b><span>${t ? esc(t.emoji) : '🌴'}${n ? '<i></i>' : ''}</span></button>`;
   }).join('')}</nav>`;
@@ -260,8 +260,10 @@ function renderPlanToday(el, btn) {
       <div class="tl-dot"></div>
       <div class="tl-card ${b.oneOff ? 'one-off' : ''}">
         ${b.oneOff ? `<button type="button" class="one-off-del" data-pa="del-oneoff" data-id="${esc(b.id)}" aria-label="Aus dem heutigen Plan entfernen">×</button>` : ''}
-        <div class="tl-title">${esc(blockEmoji(b))} ${esc(b.title)}</div>
-        <div class="tl-meta">${b.e !== null ? durText(b.e - b.s) : 'offen'}${b.oneOff ? ' · nur heute' : ''}${isNow ? ' · <b>läuft gerade</b>' : ''}</div>
+        <button type="button" class="tl-main" data-pa="adjust" data-id="${esc(b.id)}" aria-label="${esc(b.title)} für diesen Tag anpassen">
+          <div class="tl-title">${esc(blockEmoji(b))} ${esc(b.title)}</div>
+          <div class="tl-meta">${b.e !== null ? durText(b.e - b.s) : 'offen'}${b.oneOff ? ` · nur ${isToday ? 'heute' : 'an diesem Tag'}` : ''}${b.orig ? ` · <span class="moved">${b.orig.start !== b.start ? `verschoben, sonst ${b.orig.start}` : `angepasst, sonst bis ${b.orig.end || 'offen'}`}</span>` : ''}${isNow ? ' · <b>läuft gerade</b>' : ''}</div>
+        </button>
         ${isPast ? '' : stepsHtml(b.steps)}
         ${habitChips(b.habitIds)}
       </div>
@@ -269,10 +271,18 @@ function renderPlanToday(el, btn) {
   }
   if (!nowPlaced && rows.length) tl += nowLine;
 
-  const timelineHtml = rows.length
+  const skipped = Plan.skippedBlocks(state.plan, today);
+  const skippedHtml = (skipped.length ? `<div class="skipped">
+      <span class="muted-sm">Ausgelassen:</span>
+      ${skipped.map((b) => `<button type="button" class="skipped-chip" data-pa="unskip" data-id="${esc(b.id)}">${esc(blockEmoji(b))} ${esc(b.title)} <b>↺</b></button>`).join('')}
+    </div>` : '')
+    + (Object.keys(state.plan.dayEdits[today] || {}).length
+      ? `<button type="button" class="link-btn" data-pa="reset-day">↺ Alle Anpassungen für ${isToday ? 'heute' : 'diesen Tag'} zurücksetzen</button>`
+      : '');
+  const timelineHtml = (rows.length
     ? `<ol class="timeline">${tl}</ol>`
     : `<div class="empty"><div class="big">🌴</div><p>${tpl ? 'Dieser Tagestyp hat noch keine Zeitblöcke.' : `${isToday ? 'Heute' : 'An diesem Tag'} ist kein Ablauf geplant. Genieß den Tag!`}</p>
-       <button type="button" class="btn btn-ghost" data-pa="fill-gap" data-s="${now < 0 ? 540 : Math.ceil(now / 15) * 15}" data-e="${(now < 0 ? 540 : Math.ceil(now / 15) * 15) + 60}">+ Etwas einplanen</button></div>`;
+       <button type="button" class="btn btn-ghost" data-pa="fill-gap" data-s="${now < 0 ? 540 : Math.ceil(now / 15) * 15}" data-e="${(now < 0 ? 540 : Math.ceil(now / 15) * 15) + 60}">+ Etwas einplanen</button></div>`) + skippedHtml;
 
   el.innerHTML = strip + switcher + nowCard + todoCard(today) + unplannedHtml + `<div class="section-label">Dein Tag</div>` + timelineHtml;
 }
@@ -489,6 +499,124 @@ $('#slot-form').addEventListener('submit', (e) => {
 $('#btn-slot-cancel').addEventListener('click', () => slotDialog.close());
 slotDialog.addEventListener('click', (e) => { if (e.target === slotDialog) slotDialog.close(); });
 
+/* ----- Dialog: Block nur für diesen Tag anpassen ----- */
+
+const adjustDialog = $('#adjust-dialog');
+let adjusting = null; // { day, id, oneOff, tplId }
+
+function openAdjustDialog(blockId) {
+  const day = viewDay();
+  const items = Plan.dayTimeline(state.plan, day);
+  const b = items.find((x) => x.id === blockId);
+  if (!b) return;
+  const tpl = Plan.templateFor(state.plan, day);
+  adjusting = { day, id: b.id, oneOff: !!b.oneOff, tplId: tpl && !b.oneOff ? tpl.id : null };
+  const when = isViewToday() ? 'heute' : dayLabel(day, true);
+  $('#adj-title').textContent = `${blockEmoji(b)} ${b.title}`;
+  $('#adj-sub').textContent = b.oneOff
+    ? `Nur ${when} eingeplant.`
+    : `Gilt nur für ${when} – dein Tagestyp „${tpl.name}“ bleibt unverändert.${b.orig ? ` Sonst ${b.orig.start}${b.orig.end ? '–' + b.orig.end : ''}.` : ''}`;
+  $('#adj-start').value = b.start;
+  $('#adj-end').value = b.end || (b.e !== null ? Plan.fmt(b.e % 1440) : '');
+  $('#adj-follow').checked = false;
+  $('#btn-adj-reset').hidden = !b.orig;
+  $('#btn-adj-template').hidden = b.oneOff;
+  $('#btn-adj-skip').textContent = b.oneOff ? 'Entfernen' : `${isViewToday() ? 'Heute' : 'An diesem Tag'} auslassen`;
+  adjustDialog.showModal();
+}
+
+const shiftTime = (t, d) => Plan.fmt(((Plan.toMin(t) + d) % 1440 + 1440) % 1440);
+
+$('#adj-shifts').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-shift]');
+  if (!b) return;
+  const d = Number(b.dataset.shift);
+  if (Plan.TIME.test($('#adj-start').value)) $('#adj-start').value = shiftTime($('#adj-start').value, d);
+  if (Plan.TIME.test($('#adj-end').value)) $('#adj-end').value = shiftTime($('#adj-end').value, d);
+});
+
+/** Setzt Start/Ende eines Blocks für den Tag (Tagestyp-Block über dayEdits, Einmal-Block direkt). */
+function setBlockTimes(day, id, start, end) {
+  const plan = state.plan;
+  const one = (plan.dayBlocks[day] || []).find((x) => x.id === id);
+  if (one) { one.start = start; one.end = end; return; }
+  const tpl = Plan.templateFor(plan, day);
+  const orig = tpl && tpl.blocks.find((x) => x.id === id);
+  if (!orig) return;
+  const edits = plan.dayEdits[day] || (plan.dayEdits[day] = {});
+  if (orig.start === start && (orig.end || null) === end) delete edits[id];
+  else edits[id] = { start, end };
+}
+
+function cleanupDayEdits() {
+  const cutoff = Plan.addDays(todayKey(), -14);
+  for (const k of Object.keys(state.plan.dayEdits)) {
+    if (k < cutoff || !Object.keys(state.plan.dayEdits[k]).length) delete state.plan.dayEdits[k];
+  }
+}
+
+$('#adjust-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const start = $('#adj-start').value;
+  const endRaw = $('#adj-end').value;
+  if (!Plan.TIME.test(start)) return toast('Bitte eine Startzeit wählen.');
+  const end = Plan.TIME.test(endRaw) && endRaw !== start ? endRaw : null;
+  const { day, id } = adjusting;
+  const before = Plan.dayTimeline(state.plan, day);
+  const cur = before.find((x) => x.id === id);
+  const delta = Plan.toMin(start) - cur.s;
+  const curEnd = cur.end || (cur.e !== null ? Plan.fmt(cur.e % 1440) : null);
+  if (!delta && end === curEnd) { adjustDialog.close(); return; } // nichts geändert
+  setBlockTimes(day, id, start, end === curEnd && !cur.end ? null : end);
+  let moved = 0;
+  if ($('#adj-follow').checked && delta) {
+    // Alles, was nach diesem Block beginnt, um dieselbe Zeit verschieben
+    for (const b of before) {
+      if (b.id === id || b.s <= cur.s) continue;
+      setBlockTimes(day, b.id, shiftTime(b.start, delta), b.end ? shiftTime(b.end, delta) : null);
+      moved++;
+    }
+  }
+  cleanupDayEdits();
+  save();
+  adjustDialog.close();
+  renderPlan();
+  toast(moved ? `Verschoben – ${moved} folgende Blöcke mit` : 'Für diesen Tag angepasst');
+});
+
+$('#btn-adj-cancel').addEventListener('click', () => adjustDialog.close());
+$('#btn-adj-reset').addEventListener('click', () => {
+  const edits = state.plan.dayEdits[adjusting.day];
+  if (edits) delete edits[adjusting.id];
+  cleanupDayEdits();
+  save();
+  adjustDialog.close();
+  renderPlan();
+  toast('Zeiten aus dem Tagestyp wiederhergestellt');
+});
+$('#btn-adj-skip').addEventListener('click', () => {
+  const { day, id, oneOff } = adjusting;
+  if (oneOff) {
+    state.plan.dayBlocks[day] = (state.plan.dayBlocks[day] || []).filter((b) => b.id !== id);
+  } else {
+    (state.plan.dayEdits[day] || (state.plan.dayEdits[day] = {}))[id] = { skip: true };
+  }
+  save();
+  adjustDialog.close();
+  renderPlan();
+  toast(oneOff ? 'Entfernt' : 'Ausgelassen – unten wiederherstellbar');
+});
+$('#btn-adj-template').addEventListener('click', () => {
+  const { tplId, id } = adjusting;
+  adjustDialog.close();
+  if (!tplId) return;
+  planMode = 'edit';
+  editTplId = tplId;
+  renderPlan();
+  openBlockDialog(tplId, id);
+});
+adjustDialog.addEventListener('click', (e) => { if (e.target === adjustDialog) adjustDialog.close(); });
+
 /* ----- Ereignisse ----- */
 
 $('#plan-head-btn').addEventListener('click', () => {
@@ -548,6 +676,22 @@ $('#plan-content').addEventListener('click', (e) => {
       renderPlan();
       if (!planDay) scrollToNow();
       return;
+    case 'adjust':
+      return openAdjustDialog(id);
+    case 'reset-day':
+      if (!confirm('Alle verschobenen und ausgelassenen Blöcke dieses Tages auf den Tagestyp zurücksetzen?')) return;
+      delete plan.dayEdits[viewDay()];
+      save();
+      toast('Tag zurückgesetzt');
+      break;
+    case 'unskip': {
+      const edits = plan.dayEdits[viewDay()];
+      if (edits) delete edits[id];
+      cleanupDayEdits();
+      save();
+      toast('Wiederhergestellt');
+      break;
+    }
     case 'fill-gap':
       return openSlotDialog(Number(a.dataset.s), Number(a.dataset.e), null);
     case 'plan-habit': {
@@ -671,6 +815,6 @@ setInterval(() => {
   if (currentView !== 'plan' || planMode !== 'today' || document.hidden) return;
   const active = document.activeElement;
   if (active && active.closest('#plan-content') && /INPUT|SELECT|TEXTAREA/.test(active.tagName)) return;
-  if (blockDialog.open || slotDialog.open) return;
+  if (blockDialog.open || slotDialog.open || adjustDialog.open) return;
   renderPlan();
 }, 30 * 1000);

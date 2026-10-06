@@ -10,6 +10,9 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 - **Gewohnheiten im Ablauf:** Blöcke können mehrere Gewohnheiten enthalten (z. B. Kreatin in der Morgenroutine), die direkt
   in der Zeitleiste abgehakt werden. Freie Lücken lassen sich per „+ Einplanen“ nur für heute füllen; fällige, noch nicht
   eingeplante Gewohnheiten werden angezeigt
+- **Tag flexibel anpassen:** Jeder Block lässt sich nur für einen Tag verschieben (−30 bis +60 Min oder freie Zeiten),
+  optional mit allen folgenden Blöcken, oder auslassen. Der Tagestyp bleibt unverändert; Anpassungen sind markiert
+  und lassen sich einzeln oder für den ganzen Tag zurücksetzen
 - **Vorausplanen:** Über die Tagesleiste im Ablauf lassen sich die nächsten 6 Tage planen: Tagestyp ändern,
   freie Lücken füllen, To-dos für diesen Tag anlegen. Statt des Live-Status gibt es eine Planungsübersicht
 - **Pausieren:** Gewohnheiten lassen sich bis zu einem Datum oder bis auf Weiteres pausieren (z. B. Sport bei einer
