@@ -17,8 +17,8 @@ let emojiGroup = 0;
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const SUGGESTIONS = [
-  { name: 'Wasser trinken', emoji: '💧' },
-  { name: 'Sport', emoji: '🏃' },
+  { name: 'Wasser trinken', emoji: '💧', goal: { type: 'count', target: 2000, unit: 'ml', step: 250 } },
+  { name: 'Sport', emoji: '🏃', freq: { type: 'weekly', times: 3 } },
   { name: '10 Min. lesen', emoji: '📚' },
   { name: 'Meditieren', emoji: '🧘' },
   { name: 'Zahnseide', emoji: '🦷' },
@@ -39,9 +39,27 @@ const todayKey = () => keyOf(new Date());
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (s && Array.isArray(s.habits)) return { habits: s.habits, log: s.log || {}, plan: Plan.normalize(s.plan) };
+    if (s && Array.isArray(s.habits)) {
+      return { habits: s.habits, log: s.log || {}, plan: Plan.normalize(s.plan), focus: Tree.normalizeFocus(s.focus), journal: normJournal(s.journal) };
+    }
   } catch { /* leer oder kaputt -> neu anfangen */ }
-  return { habits: [], log: {}, plan: Plan.empty() };
+  return { habits: [], log: {}, plan: Plan.empty(), focus: Tree.normalizeFocus(null), journal: {} };
+}
+
+/** Tagesabschluss: { datum: { mood 1–5, energy 1–5, note } } */
+function normJournal(j) {
+  const out = {};
+  if (!j || typeof j !== 'object') return out;
+  for (const [k, e] of Object.entries(j)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !e || typeof e !== 'object') continue;
+    const mood = Number(e.mood), energy = Number(e.energy);
+    out[k] = {
+      mood: mood >= 1 && mood <= 5 ? Math.round(mood) : null,
+      energy: energy >= 1 && energy <= 5 ? Math.round(energy) : null,
+      note: String(e.note || '').slice(0, 500),
+    };
+  }
+  return out;
 }
 
 function save() {
@@ -67,18 +85,34 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 
 /* ---------- Logik ---------- */
 
-/** Fällig an diesem Tag: Wochentag passt und die Gewohnheit ist nicht pausiert. */
-const isScheduled = (h, d) => Tree.isDue(h, keyOf(d));
+/** Fällig an diesem Tag: passt zum Rhythmus (feste Tage oder Wochenziel offen) und nicht pausiert. */
+const isScheduled = (h, d) => Tree.isDue(h, keyOf(d), state.log);
 const isPausedOn = (h, k) => Tree.isPaused(h, k);
-const isDone = (h, k) => !!(state.log[h.id] && state.log[h.id][k]);
+/** Erledigt: abgehakt bzw. Tagesziel erreicht. */
+const isDone = (h, k) => Tree.isComplete(h, state.log, k);
+const numFmt = (n) => Number(n).toLocaleString('de-DE', { maximumFractionDigits: 2 });
+const unitOf = (h) => (h.goal && h.goal.unit ? ` ${h.goal.unit}` : '');
+
+/** Menge bei Zähl-Gewohnheiten ändern (z. B. +250 ml). */
+function addAmount(h, k, delta) {
+  const entries = state.log[h.id] || (state.log[h.id] = {});
+  const v = Math.max(0, Math.round((Tree.amount(h, state.log, k) + delta) * 100) / 100);
+  if (v > 0) entries[k] = v; else delete entries[k];
+  save();
+  return isDone(h, k);
+}
 
 function toggle(h, k) {
+  if (Tree.isCount(h)) return addAmount(h, k, h.goal.step || 1);
   const entries = state.log[h.id] || (state.log[h.id] = {});
   if (entries[k]) delete entries[k];
   else entries[k] = true;
   save();
   return !!entries[k];
 }
+
+/** Rhythmus als Text: „Täglich“, „Mo, Mi, Fr“ oder „3× pro Woche“. */
+const freqLabel = (h) => (Tree.isWeekly(h) ? `${Tree.weeklyTimes(h)}× pro Woche` : daysLabel(h.days));
 
 /** Frühester relevanter Tag: Erstellung oder frühester (nachgetragener) Eintrag. */
 function startOf(h) {
@@ -92,7 +126,36 @@ function startOf(h) {
  * Ungeplante Tage sind neutral. Ist heute noch offen, zählt die Serie bis gestern
  * (der Tag ist ja noch nicht vorbei).
  */
+/** Wochenziele: Serie in Wochen. Die laufende Woche zählt nur, wenn ihr Ziel schon erreicht ist. */
+function weekStreak(h) {
+  const start = startOf(h);
+  const times = Tree.weeklyTimes(h);
+  let wk = parseKey(Tree.weekStart(todayKey()));
+  let streak = 0;
+  if (Tree.weekCount(h, state.log, todayKey()) >= times) streak++;
+  for (wk = addDays(wk, -7); addDays(wk, 6) >= start; wk = addDays(wk, -7)) {
+    const sunday = keyOf(addDays(wk, 6));
+    if (isPausedOn(h, sunday)) continue;
+    if (Tree.weekCount(h, state.log, sunday) >= times) streak++;
+    else break;
+  }
+  return streak;
+}
+
+function bestWeekStreak(h) {
+  const times = Tree.weeklyTimes(h);
+  let best = 0, run = 0;
+  for (let wk = parseKey(Tree.weekStart(keyOf(startOf(h)))); wk <= parseKey(todayKey()); wk = addDays(wk, 7)) {
+    const sunday = keyOf(addDays(wk, 6));
+    const met = Tree.weekCount(h, state.log, sunday > todayKey() ? todayKey() : sunday) >= times;
+    if (met) best = Math.max(best, ++run);
+    else if (sunday < todayKey() && !isPausedOn(h, sunday)) run = 0;
+  }
+  return best;
+}
+
 function currentStreak(h) {
+  if (Tree.isWeekly(h)) return weekStreak(h);
   const start = startOf(h);
   let d = parseKey(todayKey());
   if (!isDone(h, keyOf(d))) d = addDays(d, -1);
@@ -108,6 +171,7 @@ function currentStreak(h) {
 }
 
 function bestStreak(h) {
+  if (Tree.isWeekly(h)) return bestWeekStreak(h);
   const today = parseKey(todayKey());
   let best = 0, run = 0;
   for (let d = startOf(h); d <= today; d = addDays(d, 1)) {
@@ -121,6 +185,16 @@ function bestStreak(h) {
 /** Erfüllungsquote der letzten 30 Tage (heute zählt nur, wenn schon erledigt). */
 function rate30(h) {
   const today = parseKey(todayKey());
+  if (Tree.isWeekly(h)) {
+    // Anteil der Wochenziele der letzten 4 abgeschlossenen Wochen
+    let sum = 0, n = 0;
+    for (let i = 1; i <= 4; i++) {
+      const sunday = keyOf(addDays(parseKey(Tree.weekStart(todayKey())), -7 * (i - 1) - 1));
+      if (parseKey(sunday) < startOf(h)) break;
+      sum += Math.min(1, Tree.weekCount(h, state.log, sunday) / Tree.weeklyTimes(h)); n++;
+    }
+    return n ? Math.round((sum / n) * 100) : null;
+  }
   const start = startOf(h);
   let planned = 0, done = 0;
   for (let i = 0; i < 30; i++) {
@@ -189,9 +263,10 @@ function renderToday() {
   const paused = state.habits.filter((h) => isPausedOn(h, selectedKey));
   const other = state.habits.filter((h) => !isScheduled(h, sel) && !isPausedOn(h, selectedKey));
   const todo = Plan.todoStatus(state.plan, selectedKey);
-  const doneCount = planned.filter((h) => isDone(h, selectedKey)).length + (todo.done ? 1 : 0);
-  const plannedCount = planned.length + (todo.planned ? 1 : 0);
-  renderRing(doneCount, plannedCount);
+  const score = Tree.dayScore(state.habits.filter((h) => startOf(h) <= sel), state.log, selectedKey, todoExtra(selectedKey));
+  const doneCount = score.full;
+  const plannedCount = score.planned;
+  renderRing(doneCount, plannedCount, plannedCount ? score.done / plannedCount : 0);
 
   if (!state.habits.length) {
     $('#today-list').innerHTML = `<div class="empty">
@@ -224,6 +299,7 @@ function renderToday() {
     html = `<div class="card" style="text-align:center">🎉 <b>${isToday ? 'Alles erledigt für heute! Dein Baum ist gegossen.' : 'Alles erledigt an diesem Tag!'}</b></div>` + html;
   }
   if (isToday) {
+    if (new Date().getHours() >= 19 || state.journal[todayKey()]) html += journalCardHtml();
     html = treeBanner(treeState()) + html;
     if (canBackfill() && yesterdayIncomplete()) {
       html += `<button type="button" class="link-btn" data-backfill="yes">Gestern vergessen einzutragen? Noch bis ${BACKFILL_UNTIL_HOUR} Uhr möglich</button>`;
@@ -249,7 +325,34 @@ function todoRow(todo) {
 function habitRow(h, off) {
   const done = isDone(h, selectedKey);
   const streak = currentStreak(h);
-  const meta = streak ? `🔥 <b>${streak}</b> ${tageWort(streak)} in Folge · ${daysLabel(h.days)}` : daysLabel(h.days);
+  const weekly = Tree.isWeekly(h);
+  const unit = weekly ? (streak === 1 ? 'Woche' : 'Wochen') : tageWort(streak);
+  const parts = [];
+  if (Tree.isCount(h)) parts.push(`<b>${numFmt(Tree.amount(h, state.log, selectedKey))}/${numFmt(Tree.target(h))}${esc(unitOf(h))}</b>`);
+  if (weekly) {
+    const n = Tree.weekCount(h, state.log, selectedKey);
+    parts.push(n >= Tree.weeklyTimes(h) ? `✓ Wochenziel ${n}/${Tree.weeklyTimes(h)}` : `${n}/${Tree.weeklyTimes(h)} diese Woche`);
+  }
+  if (streak) parts.push(`🔥 <b>${streak}</b> ${unit}`);
+  if (!weekly) parts.push(freqLabel(h));
+  const meta = parts.join(' · ');
+  if (Tree.isCount(h)) {
+    const amt = Tree.amount(h, state.log, selectedKey);
+    const p = Tree.progressOf(h, state.log, selectedKey);
+    const r = 19, c = 2 * Math.PI * r;
+    return `<div class="habit ${off ? 'off' : ''}" style="--c:${h.color}">
+    <div class="emoji" aria-hidden="true">${esc(h.emoji)}</div>
+    <button type="button" class="info" data-edit="${esc(h.id)}" aria-label="${esc(h.name)} bearbeiten">
+      <div class="name">${esc(h.name)}</div>
+      <div class="meta">${meta}</div>
+    </button>
+    ${amt > 0 ? `<button type="button" class="dec" data-dec="${esc(h.id)}" aria-label="${esc(numFmt(h.goal.step || 1) + unitOf(h))} zurücknehmen">−</button>` : ''}
+    <button type="button" class="counter ${done ? 'on' : ''}" data-toggle="${esc(h.id)}" aria-label="${esc(h.name)}: ${esc(numFmt(h.goal.step || 1) + unitOf(h))} hinzufügen">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="track" cx="22" cy="22" r="${r}"/><circle class="bar" cx="22" cy="22" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - p)}"/></svg>
+      <span>${done ? '✓' : '+'}</span>
+    </button>
+  </div>`;
+  }
   return `<div class="habit ${off ? 'off' : ''}" style="--c:${h.color}">
     <div class="emoji" aria-hidden="true">${esc(h.emoji)}</div>
     <button type="button" class="info" data-edit="${esc(h.id)}" aria-label="${esc(h.name)} bearbeiten">
@@ -260,9 +363,9 @@ function habitRow(h, off) {
   </div>`;
 }
 
-function renderRing(done, total) {
+function renderRing(done, total, fraction) {
   const r = 24, c = 2 * Math.PI * r;
-  const frac = total ? done / total : 0;
+  const frac = fraction ?? (total ? done / total : 0);
   $('#progress-ring').innerHTML = `<svg viewBox="0 0 56 56" aria-hidden="true">
       <circle class="track" cx="28" cy="28" r="${r}"/>
       <circle class="bar" cx="28" cy="28" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - frac)}"/>
@@ -274,7 +377,7 @@ function renderRing(done, total) {
 /* ---------- Ansicht: Baum ---------- */
 
 /** „Alle To-dos erledigt“ zählt für den Baum wie eine zusätzliche Gewohnheit. */
-const todoExtra = (k) => Plan.todoStatus(state.plan, k);
+const todoExtra = (k) => ({ ...Plan.todoStatus(state.plan, k), growth: Tree.focusGrowth(state.focus, k) });
 const treeState = () => Tree.simulate(state.habits, state.log, todayKey(), todoExtra);
 const treeSeed = () => (state.habits.length ? state.habits.map((h) => h.createdAt).sort()[0] : 'baum');
 
@@ -364,6 +467,7 @@ function renderTree() {
       <div class="bar-row cans-row"><span>Gießkannen ${cans}</span><span class="muted-sm">${canText}</span></div>
       <p class="tree-today">${todayText}</p>
     </div>
+    ${focusCardHtml()}
     <div class="card">
       <h2>Chronik</h2>
       <ul class="events">${events}</ul>
@@ -395,7 +499,7 @@ function renderStats() {
   const gridStart = addDays(today, -weekdayIdx(today) - (HEAT_WEEKS - 1) * 7);
   const monthFmt = new Intl.DateTimeFormat('de-DE', { month: 'short' });
 
-  $('#stats-list').innerHTML = state.habits.map((h) => {
+  $('#stats-list').innerHTML = weekReviewHtml() + `<div class="section-label">Deine Gewohnheiten</div>` + state.habits.map((h) => {
     const start = startOf(h);
     const rate = rate30(h);
     let cells = '';
@@ -406,9 +510,12 @@ function renderStats() {
       if (d > today) cls = 'future';
       else if (isDone(h, k)) cls = 'done';
       else if (d < start) cls = 'pre';
-      else if (!isScheduled(h, d)) cls = 'rest';
+      else if (Tree.isCount(h) && Tree.amount(h, state.log, k) > 0) cls = 'done part';
+      else if (!Tree.isWeekly(h) && !isScheduled(h, d) && !isPausedOn(h, k)) cls = 'rest';
       if (k === todayKey()) cls += ' today';
-      cells += `<i class="${cls}" title="${d.toLocaleDateString('de-DE')}"></i>`;
+      const part = cls.includes('part') ? ` style="opacity:${(0.25 + 0.5 * Tree.progressOf(h, state.log, k)).toFixed(2)}"` : '';
+      const info = Tree.isCount(h) ? ` · ${numFmt(Tree.amount(h, state.log, k))}${unitOf(h)}` : '';
+      cells += `<i class="${cls}"${part} title="${d.toLocaleDateString('de-DE')}${esc(info)}"></i>`;
     }
     const cur = currentStreak(h), best = bestStreak(h);
     return `<div class="card" style="--c:${h.color}">
@@ -418,12 +525,12 @@ function renderStats() {
         <button type="button" class="edit" data-edit="${esc(h.id)}">Bearbeiten</button>
       </div>
       <div class="nums">
-        <div><b>🔥 ${cur}</b><span>Aktuelle Serie</span></div>
+        <div><b>🔥 ${cur}</b><span>Aktuelle Serie${Tree.isWeekly(h) ? ' (Wochen)' : ''}</span></div>
         <div><b>${best}</b><span>Beste Serie</span></div>
-        <div><b>${rate === null ? '–' : rate + ' %'}</b><span>Quote 30 Tage</span></div>
+        <div><b>${rate === null ? '–' : rate + ' %'}</b><span>${Tree.isWeekly(h) ? 'Quote 4 Wochen' : 'Quote 30 Tage'}</span></div>
       </div>
       <div class="heat" role="img" aria-label="Verlauf der letzten ${HEAT_WEEKS} Wochen">${cells}</div>
-      <div class="legend"><span>${monthFmt.format(gridStart)}</span><span>${daysLabel(h.days)}</span><span>Heute</span></div>
+      <div class="legend"><span>${monthFmt.format(gridStart)}</span><span>${esc(freqLabel(h))}${Tree.isCount(h) ? ` · Ziel ${numFmt(Tree.target(h))}${esc(unitOf(h))}` : ''}</span><span>Heute</span></div>
     </div>`;
   }).join('');
 }
@@ -461,6 +568,11 @@ function openDialog(habit, preset) {
   draft = habit
     ? { ...habit, days: [...habit.days] }
     : { name: '', emoji: '✅', color: COLORS[state.habits.length % COLORS.length], days: [...ALL_DAYS], ...preset };
+  draft.goal = { type: 'check', target: 1, unit: '', step: 1, ...(draft.goal || {}) };
+  draft.freq = { type: 'days', times: 3, ...(draft.freq || {}) };
+  $('#f-target').value = draft.goal.type === 'count' ? draft.goal.target : '';
+  $('#f-unit').value = draft.goal.unit || '';
+  $('#f-step').value = draft.goal.type === 'count' ? draft.goal.step : '';
   $('#dialog-title').textContent = habit ? 'Gewohnheit bearbeiten' : 'Neue Gewohnheit';
   $('#f-name').value = draft.name;
   $('#f-emoji').value = draft.emoji;
@@ -526,6 +638,12 @@ function renderDialogPickers() {
   $('#swatches').innerHTML = COLORS.map((c) => `<button type="button" data-color="${c}" style="--c:${c}" aria-label="Farbe ${c}" aria-pressed="${c === draft.color}"></button>`).join('')
     + `<label class="custom-color" style="--c:${custom ? draft.color : 'transparent'}" aria-pressed="${custom}" title="Eigene Farbe">
         <input type="color" id="f-color" value="${custom ? draft.color : '#16a34a'}" aria-label="Eigene Farbe wählen"><span aria-hidden="true">${custom ? '' : '+'}</span></label>`;
+  document.querySelectorAll('#goal-type [data-goal]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.goal === draft.goal.type));
+  document.querySelectorAll('#freq-type [data-freq]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.freq === draft.freq.type));
+  $('#goal-count').hidden = draft.goal.type !== 'count';
+  $('#days-field').hidden = draft.freq.type !== 'days';
+  $('#weekly-field').hidden = draft.freq.type !== 'weekly';
+  $('#f-times').textContent = draft.freq.times;
   $('#day-toggles').innerHTML = WEEKDAYS.map((w, i) => `<button type="button" data-dayt="${i}" aria-pressed="${draft.days.includes(i)}">${w}</button>`).join('');
 }
 
@@ -564,16 +682,44 @@ $('#day-toggles').addEventListener('click', (e) => {
   renderDialogPickers();
 });
 
+$('#goal-type').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-goal]');
+  if (!b) return;
+  draft.goal.type = b.dataset.goal;
+  if (draft.goal.type === 'count' && !$('#f-target').value) { $('#f-target').value = 8; $('#f-step').value = 1; }
+  renderDialogPickers();
+});
+$('#freq-type').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-freq]');
+  if (!b) return;
+  draft.freq.type = b.dataset.freq;
+  renderDialogPickers();
+});
+$('#weekly-field').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-times]');
+  if (!b) return;
+  draft.freq.times = Math.max(1, Math.min(7, draft.freq.times + Number(b.dataset.times)));
+  $('#f-times').textContent = draft.freq.times;
+});
+
 $('#habit-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const name = $('#f-name').value.trim();
   if (!name) { $('#f-name').focus(); return; }
-  if (!draft.days.length) { toast('Wähle mindestens einen Tag aus.'); return; }
+  if (draft.freq.type === 'days' && !draft.days.length) { toast('Wähle mindestens einen Tag aus.'); return; }
   const emoji = $('#f-emoji').value.trim() || '✅';
+  let goal = { type: 'check' };
+  if (draft.goal.type === 'count') {
+    const target = Number($('#f-target').value), step = Number($('#f-step').value || 1);
+    if (!(target > 0) || !(step > 0)) { toast('Bitte ein gültiges Ziel und eine Schrittgröße angeben.'); return; }
+    goal = { type: 'count', target, unit: $('#f-unit').value.trim().slice(0, 12), step };
+  }
+  const freq = draft.freq.type === 'weekly' ? { type: 'weekly', times: draft.freq.times } : { type: 'days' };
+  const days = draft.freq.type === 'weekly' ? [...ALL_DAYS] : draft.days;
   if (editingId) {
-    Object.assign(state.habits.find((h) => h.id === editingId), { name, emoji, color: draft.color, days: draft.days });
+    Object.assign(state.habits.find((h) => h.id === editingId), { name, emoji, color: draft.color, days, goal, freq });
   } else {
-    state.habits.push({ id: uid(), name, emoji, color: draft.color, days: draft.days, createdAt: todayKey() });
+    state.habits.push({ id: uid(), name, emoji, color: draft.color, days, goal, freq, createdAt: todayKey() });
   }
   save();
   dialog.close();
@@ -605,11 +751,19 @@ document.addEventListener('click', (e) => {
   const bf = t.closest('[data-backfill]');
   if (bf) { selectedKey = bf.dataset.backfill === 'yes' ? yesterdayKey() : todayKey(); window.scrollTo(0, 0); return renderToday(); }
 
+  const dec = t.closest('[data-dec]');
+  if (dec) {
+    const h = state.habits.find((x) => x.id === dec.dataset.dec);
+    if (h) { addAmount(h, selectedKey, -(h.goal.step || 1)); renderToday(); }
+    return;
+  }
+
   const tog = t.closest('[data-toggle]');
   if (tog) {
     const h = state.habits.find((x) => x.id === tog.dataset.toggle);
     const before = treeState();
-    const nowDone = toggle(h, selectedKey);
+    const wasDone = isDone(h, selectedKey);
+    const nowDone = toggle(h, selectedKey) && !wasDone; // nur beim Erreichen feiern
     const after = treeState();
     if (nowDone && navigator.vibrate) navigator.vibrate(15);
     renderToday();
@@ -620,7 +774,7 @@ document.addEventListener('click', (e) => {
       const isToday = selectedKey === todayKey();
       if (after.stage > before.stage) toast(`🌳 Dein Baum ist gewachsen: ${after.stageName}!`);
       else if (after.cans > before.cans) toast('💧 Du hast eine Gießkanne verdient!');
-      else if (isToday && after.today.planned && after.today.done === after.today.planned) toast(`💧 Baum gegossen – +${Tree.RULES.perfect} Gesundheit`);
+      else if (isToday && after.today.planned && after.today.done >= after.today.planned) toast(`💧 Baum gegossen – +${Tree.RULES.perfect} Gesundheit`);
       else if (isToday && s > 1 && (s % 7 === 0 || s === 3 || s === 30 || s === 100)) toast(`🔥 ${s} Tage in Folge – stark!`);
     }
     return;
@@ -872,12 +1026,18 @@ $('#input-import').addEventListener('change', async (e) => {
         ...h,
         color: HEX.test(h.color) ? h.color : COLORS[0],
         emoji: String(h.emoji || '✅'),
+        goal: h.goal && h.goal.type === 'count' && Number(h.goal.target) > 0
+          ? { type: 'count', target: Number(h.goal.target), unit: String(h.goal.unit || '').slice(0, 12), step: Number(h.goal.step) > 0 ? Number(h.goal.step) : 1 }
+          : { type: 'check' },
+        freq: h.freq && h.freq.type === 'weekly' ? { type: 'weekly', times: Math.max(1, Math.min(7, Math.round(Number(h.freq.times) || 1))) } : { type: 'days' },
         pauses: (Array.isArray(h.pauses) ? h.pauses : [])
           .filter((p) => p && DATE_RE.test(p.from) && (p.to == null || DATE_RE.test(p.to)))
           .map((p) => ({ from: p.from, to: p.to || null })),
       })),
       log: data.log || {},
       plan: Plan.normalize(data.plan),
+      focus: Tree.normalizeFocus(data.focus),
+      journal: normJournal(data.journal),
     };
     save();
     render();
@@ -889,7 +1049,7 @@ $('#input-import').addEventListener('change', async (e) => {
 
 $('#btn-reset').addEventListener('click', () => {
   if (!confirm('Wirklich alle Gewohnheiten, Einträge und Abläufe löschen?')) return;
-  state = { habits: [], log: {}, plan: Plan.empty() };
+  state = { habits: [], log: {}, plan: Plan.empty(), focus: Tree.normalizeFocus(null), journal: {} };
   save();
   toast('Alle Daten gelöscht');
 });

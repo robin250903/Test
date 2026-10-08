@@ -24,6 +24,8 @@ const Tree = (() => {
     perfect: 10,
     canBelow: 0.5, // Gießkanne rettet jeden Tag unter 50 %
     reviveHealth: 40,
+    focusBlock: 25,     // Minuten Fokus pro Wachstumspunkt
+    focusMaxPerDay: 3,  // höchstens so viele Fokus-Punkte pro Tag
     canEvery: 7,   // perfekte Tage in Folge für eine Gießkanne
     maxCans: 2,
   };
@@ -37,8 +39,69 @@ const Tree = (() => {
 
   /** Ist die Gewohnheit an diesem Tag pausiert? pauses: [{ from, to|null }], beide Tage inklusive. */
   const isPaused = (h, k) => Array.isArray(h.pauses) && h.pauses.some((p) => p.from <= k && (!p.to || k <= p.to));
-  /** Ist die Gewohnheit an diesem Tag fällig (Wochentag passt und nicht pausiert)? */
-  const isDue = (h, k) => h.days.includes(weekdayIdx(parseKey(k))) && !isPaused(h, k);
+
+  /* ---------- Fokus ---------- */
+
+  const DATE = /^\d{4}-\d{2}-\d{2}$/;
+  const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+  /** Gespeicherte Fokus-Daten bereinigen: { sessions: [{ id, date, start, minutes, label, blockId }], active } */
+  function normalizeFocus(f) {
+    const out = { sessions: [], active: null };
+    if (!f || typeof f !== 'object') return out;
+    if (Array.isArray(f.sessions)) {
+      out.sessions = f.sessions.filter((x) => x && DATE.test(x.date) && Number(x.minutes) > 0).slice(-2000).map((x) => ({
+        id: String(x.id || '').slice(0, 40), date: x.date, start: TIME.test(x.start) ? x.start : null,
+        minutes: Math.min(600, Math.round(Number(x.minutes))), label: String(x.label || '').slice(0, 60), blockId: typeof x.blockId === 'string' ? x.blockId.slice(0, 40) : null,
+      }));
+    }
+    const a = f.active;
+    if (a && Number(a.startedAt) > 0 && Number(a.duration) > 0) {
+      out.active = { startedAt: Number(a.startedAt), duration: Math.min(180, Number(a.duration)), label: String(a.label || '').slice(0, 60), blockId: typeof a.blockId === 'string' ? a.blockId.slice(0, 40) : null };
+    }
+    return out;
+  }
+  const focusMinutes = (focus, k) => (focus && focus.sessions ? focus.sessions.filter((x) => x.date === k).reduce((s, x) => s + x.minutes, 0) : 0);
+  /** Wachstums-Bonus durch Fokus: je volle 25 Min +1, höchstens +3 pro Tag. */
+  const focusGrowth = (focus, k) => Math.min(RULES.focusMaxPerDay, Math.floor(focusMinutes(focus, k) / RULES.focusBlock));
+
+  /* ---------- Gewohnheitsarten ----------
+   * goal: { type: 'check' } (Standard) oder { type: 'count', target, unit, step } – z. B. 2000 ml Wasser
+   * freq: { type: 'days' } (Standard, Wochentage in h.days) oder { type: 'weekly', times } – z. B. 3× pro Woche
+   * log[h.id][k]: true (abgehakt) oder eine Zahl (erreichte Menge)
+   */
+  const isCount = (h) => !!(h.goal && h.goal.type === 'count');
+  const isWeekly = (h) => !!(h.freq && h.freq.type === 'weekly');
+  const target = (h) => (isCount(h) ? Math.max(1, h.goal.target || 1) : 1);
+  const amount = (h, log, k) => {
+    const v = log[h.id] && log[h.id][k];
+    if (v === true) return target(h);
+    return typeof v === 'number' && v > 0 ? v : 0;
+  };
+  const isComplete = (h, log, k) => amount(h, log, k) >= target(h);
+  /** Anteil 0…1 – bei Zählern zählt auch Teilfortschritt. */
+  const progressOf = (h, log, k) => Math.min(1, amount(h, log, k) / target(h));
+  const weekStart = (k) => { const d = parseKey(k); return keyOf(addDays(d, -weekdayIdx(d))); };
+  /** Wie oft in der Woche von k (Mo bis einschließlich k) erledigt? */
+  function weekCount(h, log, k, includeK = true) {
+    let n = 0;
+    for (let d = parseKey(weekStart(k)), end = parseKey(k); d <= end; d = addDays(d, 1)) {
+      const dk = keyOf(d);
+      if (!includeK && dk === k) break;
+      if (isComplete(h, log, dk)) n++;
+    }
+    return n;
+  }
+  const weeklyTimes = (h) => Math.max(1, Math.min(7, (h.freq && h.freq.times) || 1));
+
+  /**
+   * Ist die Gewohnheit an diesem Tag dran? Feste Tage: Wochentag passt.
+   * X-mal pro Woche: solange das Wochenziel noch nicht erreicht ist (oder heute schon erledigt).
+   */
+  function isDue(h, k, log) {
+    if (isPaused(h, k)) return false;
+    if (isWeekly(h)) return !log || weekCount(h, log, k, false) < weeklyTimes(h) || isComplete(h, log, k);
+    return h.days.includes(weekdayIdx(parseKey(k)));
+  }
 
   const stageOf = (growth) => STAGES.reduce((s, st, i) => (growth >= st.min ? i : s), 0);
 
@@ -50,6 +113,33 @@ const Tree = (() => {
       if (ratio <= x1) return Math.round(y0 + ((ratio - x0) / (x1 - x0)) * (y1 - y0));
     }
     return 0;
+  }
+
+  /**
+   * Bewertung eines Tages für den Baum: geplante Einheiten, erreichte Einheiten (mit Teilfortschritt)
+   * und Wachstum. Wochenziele: jeder erledigte Tag zählt mit, sonntags wird das Wochenziel abgerechnet.
+   */
+  function dayScore(active, log, k, x) {
+    const wd = weekdayIdx(parseKey(k));
+    let planned = 0, done = 0, full = 0, growth = 0;
+    for (const h of active) {
+      const complete = isComplete(h, log, k);
+      if (complete) growth++; // jede erledigte Gewohnheit lässt den Baum wachsen
+      if (isPaused(h, k)) continue;
+      if (isWeekly(h)) {
+        if (complete) { planned++; done++; full++; }
+        if (wd === 6) {
+          const part = Math.min(1, weekCount(h, log, k) / weeklyTimes(h));
+          planned++; done += part; if (part >= 1) full++;
+        }
+      } else if (h.days.includes(wd)) {
+        const p = progressOf(h, log, k);
+        planned++; done += p; if (p >= 1) full++;
+      }
+    }
+    if (x && x.planned) { planned++; if (x.done) { done++; full++; growth++; } }
+    if (x && x.growth) growth += x.growth; // z. B. Fokus-Bonus
+    return { planned, done: Math.round(done * 1000) / 1000, full, growth };
   }
 
   function habitStart(h, log) {
@@ -65,7 +155,7 @@ const Tree = (() => {
   function simulate(habits, log, todayK, extra) {
     const result = {
       growth: 0, stage: 0, health: RULES.startHealth, cans: 0, perfectRun: 0,
-      events: [], today: { planned: 0, done: 0 }, empty: !habits.length,
+      events: [], today: { planned: 0, done: 0, full: 0 }, empty: !habits.length,
     };
     if (!habits.length) return finish(result);
 
@@ -77,23 +167,17 @@ const Tree = (() => {
 
     for (let d = parseKey(firstKey); d <= today; d = addDays(d, 1)) {
       const k = keyOf(d);
-      const wd = weekdayIdx(d);
       const active = habits.filter((h) => starts.get(h.id) <= k);
-      const x = extra ? extra(k) : null;
-      const bonusPlanned = x && x.planned ? 1 : 0;
-      const bonusDone = x && x.planned && x.done ? 1 : 0;
-      const due = active.filter((h) => h.days.includes(wd) && !isPaused(h, k));
-      const planned = { length: due.length + bonusPlanned };
-      const done = due.filter((h) => log[h.id] && log[h.id][k]).length + bonusDone;
+      const sc = dayScore(active, log, k, extra ? extra(k) : null);
+      const planned = { length: sc.planned };
+      const done = sc.done;
       const stageBefore = stageOf(growth);
-
-      // Jede erledigte Gewohnheit lässt den Baum wachsen, auch an ungeplanten Tagen
-      growth += active.filter((h) => log[h.id] && log[h.id][k]).length + bonusDone;
+      growth += sc.growth;
 
       if (k === todayK) {
-        result.today = { planned: planned.length, done };
+        result.today = { planned: sc.planned, done, full: sc.full };
         // Der heutige Tag kann nur helfen, bestraft wird erst, wenn er vorbei ist
-        if (planned.length && done === planned.length) {
+        if (planned.length && done >= planned.length) {
           health = clamp(health + RULES.perfect);
           perfectRun++;
           if (perfectRun % RULES.canEvery === 0 && cans < RULES.maxCans) { cans++; events.push({ type: 'can', key: k }); }
@@ -293,16 +377,17 @@ const Tree = (() => {
   function reminder(habits, log, todayK, slot = 'evening', extra) {
     const t = simulate(habits, log, todayK, extra);
     const { planned, done } = t.today;
-    const open = habits.filter((h) => isDue(h, todayK) && !(log[h.id] && log[h.id][todayK]));
+    const open = habits.filter((h) => isDue(h, todayK, log) && !isComplete(h, log, todayK)).map((h) => (
+      isCount(h) ? { emoji: h.emoji, name: `${h.name} (${amount(h, log, todayK)}/${target(h)}${h.goal.unit ? ' ' + h.goal.unit : ''})` } : h));
     const x = extra ? extra(todayK) : null;
     if (x && x.planned && !x.done) open.unshift({ emoji: '✅', name: `${x.total - x.doneCount} To-do${x.total - x.doneCount === 1 ? '' : 's'}` });
     const names = open.slice(0, 3).map((h) => `${h.emoji} ${h.name}`).join(', ') + (open.length > 3 ? ' …' : '');
-    const left = planned - done;
+    const left = planned - (t.today.full ?? Math.floor(done));
     const morning = slot === 'morning';
 
     if (t.empty) return { title: '🌰 Pflanz deinen Baum', body: 'Leg deine erste Gewohnheit an, damit dein Baum wachsen kann.', urgent: false };
     if (!planned) return { title: '🌳 Ruhetag', body: 'Heute ist nichts geplant. Dein Baum ruht sich aus.', urgent: false };
-    if (done === planned) {
+    if (done >= planned) {
       return morning
         ? { title: '☀️ Schon alles erledigt!', body: `Was für ein Start in den Tag. Dein Baum ist gegossen (${t.health} % Gesundheit).`, urgent: false }
         : { title: '🌳 Alles erledigt!', body: `Dein Baum ist heute gegossen (${t.stageName}, ${t.health} % Gesundheit). Stark!`, urgent: false };
@@ -330,7 +415,9 @@ const Tree = (() => {
     return { title: '🌿 Fast geschafft', body: `Noch ${left} offen. Die nächste bringt +${gain}, alles zusammen +${RULES.perfect}: ${names}`, urgent: false };
   }
 
-  return { isPaused, isDue, STAGES, RULES, simulate, svg, healthLabel, reminder, deltaFor, neededToSurvive };
+  return {
+    normalizeFocus, focusMinutes, focusGrowth,
+    isPaused, isDue, isCount, isWeekly, target, amount, isComplete, progressOf, weekCount, weeklyTimes, weekStart, dayScore, STAGES, RULES, simulate, svg, healthLabel, reminder, deltaFor, neededToSurvive };
 })();
 
 if (typeof module !== 'undefined') module.exports = Tree;

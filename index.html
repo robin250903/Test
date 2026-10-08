@@ -131,8 +131,35 @@
         <div class="swatches" id="swatches"></div>
       </div>
       <div class="field">
+        <span>Art</span>
+        <div class="seg" id="goal-type">
+          <button type="button" data-goal="check">✓ Abhaken</button>
+          <button type="button" data-goal="count">🔢 Menge zählen</button>
+        </div>
+        <div class="goal-count" id="goal-count" hidden>
+          <label><small>Tagesziel</small><input type="number" id="f-target" min="0.1" step="any" inputmode="decimal"></label>
+          <label><small>Einheit</small><input id="f-unit" maxlength="12" autocomplete="off" placeholder="ml, Seiten …"></label>
+          <label><small>Pro Tipp</small><input type="number" id="f-step" min="0.1" step="any" inputmode="decimal"></label>
+        </div>
+      </div>
+      <div class="field">
+        <span>Wie oft?</span>
+        <div class="seg" id="freq-type">
+          <button type="button" data-freq="days">An festen Tagen</button>
+          <button type="button" data-freq="weekly">X-mal pro Woche</button>
+        </div>
+      </div>
+      <div class="field" id="days-field">
         <span>An welchen Tagen?</span>
         <div class="days" id="day-toggles"></div>
+      </div>
+      <div class="field" id="weekly-field" hidden>
+        <span>Wie oft pro Woche? <small>(an beliebigen Tagen, sonntags wird abgerechnet)</small></span>
+        <div class="stepper">
+          <button type="button" data-times="-1" aria-label="Weniger">−</button>
+          <b id="f-times">3</b><span>× pro Woche</span>
+          <button type="button" data-times="1" aria-label="Mehr">+</button>
+        </div>
       </div>
       <div class="field pause-field" id="pause-field" hidden></div>
       <div class="dialog-actions">
@@ -251,6 +278,38 @@
     </form>
   </dialog>
 
+  <dialog id="focus-dialog">
+    <form method="dialog" id="focus-form">
+      <h2>🎯 Fokus starten</h2>
+      <p class="muted" id="focus-today"></p>
+      <label class="field"><span>Woran arbeitest du?</span><input id="focus-label" maxlength="60" autocomplete="off" placeholder="z. B. Statistik lernen"></label>
+      <div class="field"><span>Dauer</span><div class="seg four" id="focus-durations"></div></div>
+      <p class="muted-sm">Leg das Handy weg. Der Timer läuft weiter, auch wenn du die App schließt.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-focus-cancel">Abbrechen</button>
+        <button type="submit" class="btn">Los geht's</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="focus-overlay" id="focus-overlay" hidden>
+    <div class="focus-inner">
+      <div class="focus-tree" id="focus-tree"></div>
+      <div id="focus-run">
+        <div class="focus-label">Fokus</div>
+        <h2 id="focus-title"></h2>
+        <div class="focus-clock" id="focus-clock">25:00</div>
+        <div class="focus-track"><i id="focus-bar"></i></div>
+        <button type="button" class="btn btn-ghost" id="btn-focus-stop">Beenden</button>
+      </div>
+      <div id="focus-done" hidden>
+        <h2 id="focus-done-title"></h2>
+        <p id="focus-done-text"></p>
+        <button type="button" class="btn" id="btn-focus-close">Weiter</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="tree.js"></script>
@@ -258,5 +317,7 @@
   <script src="plan.js"></script>
   <script src="app.js"></script>
   <script src="ablauf.js"></script>
+  <script src="focus.js"></script>
+  <script src="review.js"></script>
 </body>
 </html>

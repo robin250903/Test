@@ -90,8 +90,12 @@ function habitChips(ids) {
     if (isPausedOn(h, k)) return `<span class="tl-habit paused" style="--hc:${h.color}"><span class="mini-check" aria-hidden="true">⏸</span>${esc(h.emoji)} ${esc(h.name)}</span>`;
     if (k !== todayKey()) return `<span class="tl-habit planned" style="--hc:${h.color}"><span class="mini-check" aria-hidden="true"></span>${esc(h.emoji)} ${esc(h.name)}</span>`;
     const done = isDone(h, k);
-    return `<button type="button" class="tl-habit ${done ? 'on' : ''}" data-pa="habit" data-id="${esc(h.id)}" style="--hc:${h.color}" aria-pressed="${done}">
-      <span class="mini-check" aria-hidden="true">${done ? '✓' : ''}</span>${esc(h.emoji)} ${esc(h.name)}</button>`;
+    const count = Tree.isCount(h)
+      ? ` <small>${numFmt(Tree.amount(h, state.log, k))}/${numFmt(Tree.target(h))}${esc(unitOf(h))}</small>` : '';
+    const mark = done ? '✓' : Tree.isCount(h) ? '+' : '';
+    return `<button type="button" class="tl-habit ${done ? 'on' : ''} ${Tree.isCount(h) ? 'counting' : ''}" data-pa="habit" data-id="${esc(h.id)}" style="--hc:${h.color}" aria-pressed="${done}"
+      aria-label="${esc(h.name)}${Tree.isCount(h) ? `: ${esc(numFmt(h.goal.step || 1) + unitOf(h))} hinzufügen` : ''}">
+      <span class="mini-check" aria-hidden="true">${mark}</span>${esc(h.emoji)} ${esc(h.name)}${count}</button>`;
   }).join('');
   return chips ? `<div class="habit-chips">${chips}</div>` : '';
 }
@@ -208,6 +212,7 @@ function renderPlanToday(el, btn) {
       ${pct !== null ? `<div class="bar"><i style="width:${pct}%;background:var(--c)"></i></div>` : ''}
       ${stepsHtml(c.steps)}
       ${habitChips(c.habitIds)}
+      <button type="button" class="focus-btn" data-pa="focus" data-id="${esc(c.id)}">🎯 Fokus starten</button>
       ${st.next ? `<div class="now-next">Danach um <b>${st.next.start}</b>: ${esc(blockEmoji(st.next))} ${esc(st.next.title)}</div>` : ''}
     </div>`;
   } else if (st.next) {
@@ -298,7 +303,8 @@ function renderPlanToday(el, btn) {
     : `<div class="empty"><div class="big">🌴</div><p>${tpl ? 'Dieser Tagestyp hat noch keine Zeitblöcke.' : `${isToday ? 'Heute' : 'An diesem Tag'} ist kein Ablauf geplant. Genieß den Tag!`}</p>
        <button type="button" class="btn btn-ghost" data-pa="fill-gap" data-s="${now < 0 ? 540 : Math.ceil(now / 15) * 15}" data-e="${(now < 0 ? 540 : Math.ceil(now / 15) * 15) + 60}">+ Etwas einplanen</button></div>`) + skippedHtml;
 
-  el.innerHTML = strip + switcher + nowCard + todoCard(today) + unplannedHtml + `<div class="section-label">Dein Tag</div>` + timelineHtml;
+  const journalTop = isToday && journalDue();
+  el.innerHTML = strip + (isToday ? reviewBanner() : '') + switcher + nowCard + (journalTop ? journalCardHtml() : '') + todoCard(today) + unplannedHtml + `<div class="section-label">Dein Tag</div>` + timelineHtml + (isToday && !journalTop ? journalCardHtml() : '');
 }
 
 /* ----- Bearbeiten: Tagestypen, Wochentage, Zeitblöcke ----- */
@@ -800,6 +806,10 @@ $('#plan-content').addEventListener('click', (e) => {
       return;
     case 'adjust':
       return openAdjustDialog(id);
+    case 'focus': {
+      const blk = Plan.dayTimeline(plan, viewDay()).find((b) => b.id === id);
+      return openFocusDialog({ label: blk ? blk.title : 'Fokus', blockId: id });
+    }
     case 'attach':
       return openAttachDialog(id);
     case 'todo-place':
@@ -840,10 +850,11 @@ $('#plan-content').addEventListener('click', (e) => {
     case 'habit': {
       const h = state.habits.find((x) => x.id === id);
       if (!h) return;
-      const done = toggle(h, todayKey());
+      const wasDone = isDone(h, todayKey());
+      const done = toggle(h, todayKey()) && !wasDone; // nur beim Erreichen feiern
       if (done && navigator.vibrate) navigator.vibrate(15);
       const t = treeState();
-      if (done && t.today.planned && t.today.done === t.today.planned) toast(`💧 Baum gegossen – +${Tree.RULES.perfect} Gesundheit`);
+      if (done && t.today.planned && t.today.done >= t.today.planned) toast(`💧 Baum gegossen – +${Tree.RULES.perfect} Gesundheit`);
       break;
     }
     case 'pick-tpl':

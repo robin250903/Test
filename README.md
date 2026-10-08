@@ -4,6 +4,13 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 
 ## Funktionen
 
+- **Zielwerte & Wochenziele:** Gewohnheiten können eine Menge zählen (z. B. 2000 ml Wasser, +250 ml pro Tipp; Teilfortschritt
+  zählt anteilig) oder X-mal pro Woche an beliebigen Tagen fällig sein (Abrechnung sonntags, Serie in Wochen)
+- **Fokus-Modus:** Timer (15–60 Min) mit wachsendem Setzling, startbar aus dem laufenden Block oder dem Baum-Tab. Jede volle
+  25 Min Fokus pro Tag geben +1 Wachstum, höchstens +3 pro Tag; die Gesundheit bleibt Sache der Gewohnheiten
+- **Tagesabschluss & Wochenrückblick:** abends Stimmung, Energie und Notiz mit Tageszusammenfassung; in der Statistik ein
+  Rückblick pro Woche (Tagesquote, Fokus, stärkste/schwächste Gewohnheit, Baum, Stimmung) und erkannte Muster
+
 - **Tagesablauf:** Tagestypen wie „Uni-Tag“ oder „Wochenende“ mit Zeitblöcken (Morgenroutine, Vorlesung, Essen, Sport …),
   die den Wochentagen zugeordnet werden. Für einzelne Tage lässt sich ein anderer Typ wählen. Die Live-Zeitleiste zeigt,
   was gerade läuft (mit Restzeit), was als Nächstes kommt und wo freie Zeit ist. Routine-Blöcke haben Schritte statt Häkchen
@@ -59,6 +66,8 @@ ausgeliefert werden, z. B. über GitHub Pages.
 | `tree.js` | Spielregeln und Zeichnung des Lebensbaums |
 | `plan.js` | Logik des Tagesablaufs (Tagestypen, Zeitleiste, Bereinigung, Vorlage) |
 | `ablauf.js` | Ansicht und Editor des Tagesablaufs |
+| `focus.js` | Fokus-Modus (Timer, Sessions) |
+| `review.js` | Tagesabschluss und Wochenrückblick |
 | `idb.js` | Kopie der Daten in IndexedDB, damit der Service Worker sie lesen kann |
 | `sw.js` | Service Worker für Offline-Betrieb und Benachrichtigungen |
 | `scripts/send-reminder.mjs`, `.github/workflows/reminder.yml` | Stündlicher GitHub-Actions-Job, der die Erinnerung verschickt |
