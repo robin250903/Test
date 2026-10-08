@@ -4,6 +4,10 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 
 ## Funktionen
 
+- **Wald:** Bei 400 Wachstum ist ein Baum ausgewachsen, kommt in den Wald und ein neuer Samen (zufällige Art: Eiche,
+  Kirschbaum, Ahorn, Birke, Zeder, Jacaranda) startet. Jeder Waldbaum hat eine Qualität aus Ø Tagesquote, perfekten Tagen,
+  Ø Gesundheit und Tempo (Eingehen kostet viel): Kümmerling, Gewöhnlich, Selten, Episch oder Legendär – sichtbar am Aussehen.
+  Für den laufenden Baum gibt es eine Live-Vorschau
 - **Zielwerte & Wochenziele:** Gewohnheiten können eine Menge zählen (z. B. 2000 ml Wasser, +250 ml pro Tipp; Teilfortschritt
   zählt anteilig) oder X-mal pro Woche an beliebigen Tagen fällig sein (Abrechnung sonntags, Serie in Wochen)
 - **Fokus-Modus:** Timer (15–60 Min) mit wachsendem Setzling, startbar aus dem laufenden Block oder dem Baum-Tab. Jede volle

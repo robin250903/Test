@@ -379,7 +379,65 @@ function renderRing(done, total, fraction) {
 /** „Alle To-dos erledigt“ zählt für den Baum wie eine zusätzliche Gewohnheit. */
 const todoExtra = (k) => ({ ...Plan.todoStatus(state.plan, k), growth: Tree.focusGrowth(state.focus, k) });
 const treeState = () => Tree.simulate(state.habits, state.log, todayKey(), todoExtra);
-const treeSeed = () => (state.habits.length ? state.habits.map((h) => h.createdAt).sort()[0] : 'baum');
+const firstSeed = () => (state.habits.length ? state.habits.map((h) => h.createdAt).sort()[0] : 'baum');
+/** Fester Zufallswert pro Baum, damit jeder Baum seine eigene, gleichbleibende Form hat. */
+const treeSeedFor = (number, start) => (number === 1 ? firstSeed() : `${start}#${number}`);
+const treeSeed = () => { const t = treeState(); return treeSeedFor(t.current.number, t.current.start); };
+const pctTxt = (x) => `${Math.round(x * 100)} %`;
+
+/** Vorschau: Welche Qualität hätte der aktuelle Baum, wenn er jetzt ausgewachsen wäre? */
+function qualityCardHtml(t) {
+  const r = t.current.rating;
+  const ladder = Tree.TIERS.map((x) => `<span class="${r && r.tier.key === x.key ? 'on' : ''}" title="ab ${x.min} Punkten">${x.emoji}<small>${x.label}</small></span>`).join('');
+  if (!r) {
+    return `<div class="card quality-card"><div class="card-head"><h2>⭐ Qualität</h2></div>
+      <p class="muted-sm">Nach 7 Tagen siehst du hier, wie gut dein Baum gerade wächst – noch ${7 - t.current.days} ${7 - t.current.days === 1 ? 'Tag' : 'Tage'}. Je besser er wächst, desto prächtiger wird er in deinem Wald.</p>
+      <div class="tier-ladder">${ladder}</div></div>`;
+  }
+  const part = (label, v, hint) => `<div class="q-row"><span>${label}</span><div class="bar"><i style="width:${Math.round(v * 100)}%;background:var(--accent)"></i></div><b>${pctTxt(v)}</b></div>${hint ? `<p class="muted-sm q-hint">${hint}</p>` : ''}`;
+  return `<div class="card quality-card">
+    <div class="card-head"><h2>⭐ Qualität (Vorschau)</h2><span class="q-score">${r.score}<small>/100</small></span></div>
+    <div class="q-tier tier-${r.tier.key}">${r.tier.emoji} <b>${r.tier.label}</b> – so käme dein Baum (${esc(t.current.species.name)}) jetzt in den Wald</div>
+    <div class="tier-ladder">${ladder}</div>
+    ${part('Ø Tagesquote', r.parts.ratio)}
+    ${part('Perfekte Tage', r.parts.perfect)}
+    ${part('Ø Gesundheit', r.parts.health / 100)}
+    ${part('Tempo', r.parts.speed, 'Wie viel des möglichen Wachstums du nutzt – Fokus zählt mit.')}
+    <p class="q-deaths ${r.deaths ? 'bad' : ''}">${r.deaths ? `💀 ${r.deaths}× eingegangen – ${r.deaths >= 2 ? 'mehr als ein Kümmerling geht nicht mehr' : 'höchstens noch „Gewöhnlich“'}` : '💚 Noch nie eingegangen – alle Klassen sind möglich'}</p>
+  </div>`;
+}
+
+/** Der Wald: alle ausgewachsenen Bäume. */
+function forestCardHtml(t) {
+  const left = Tree.FOREST_GOAL - t.growth;
+  const grid = t.forest.map((tr, i) => `<button type="button" class="forest-tree tier-${tr.tier.key}" data-forest="${i}" aria-label="${esc(tr.tier.name)}, ${esc(tr.species.name)} Nr. ${tr.number}">
+      ${Tree.svg({ stage: 7, progress: 1, health: 100 }, treeSeedFor(tr.number, tr.start), Tree.lookFor(tr.species, tr.tier.key))}
+      <span>${tr.tier.emoji} ${esc(tr.tier.label)}</span></button>`).join('');
+  return `<div class="card forest-card">
+    <div class="card-head"><h2>🌲 Dein Wald</h2><span class="muted-sm">${t.forest.length} ${t.forest.length === 1 ? 'Baum' : 'Bäume'}</span></div>
+    ${t.forest.length ? `<div class="forest-grid">${grid}</div>` : ''}
+    <p class="muted-sm">${t.forest.length ? '' : 'Noch leer. '}Ist dein Baum (${esc(t.current.species.name)}) ausgewachsen, wird er hier eingepflanzt und ein neuer Samen startet – noch <b>${left}</b> Wachstum.</p>
+  </div>`;
+}
+
+function openForestDialog(i) {
+  const tr = treeState().forest[i];
+  if (!tr) return;
+  const fmtD = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short', year: 'numeric' });
+  $('#forest-body').innerHTML = `
+    <div class="forest-big tier-${tr.tier.key}">${Tree.svg({ stage: 7, progress: 1, health: 100 }, treeSeedFor(tr.number, tr.start), Tree.lookFor(tr.species, tr.tier.key))}</div>
+    <h2>${tr.tier.emoji} ${esc(tr.tier.name)}</h2>
+    <p class="muted">${esc(tr.species.name)} Nr. ${tr.number} · ${esc(tr.tier.label)} · <b>${tr.score}</b>/100</p>
+    <p class="muted-sm">Gewachsen vom ${fmtD.format(parseKey(tr.start))} bis ${fmtD.format(parseKey(tr.end))} – ${tr.days} Tage</p>
+    <ul class="review-list">
+      <li>📈 <span>Ø Tagesquote</span><em>${pctTxt(tr.parts.ratio)}</em></li>
+      <li>✨ <span>Perfekte Tage</span><em>${pctTxt(tr.parts.perfect)}</em></li>
+      <li>❤️ <span>Ø Gesundheit</span><em>${Math.round(tr.parts.health)}</em></li>
+      <li>⚡ <span>Tempo</span><em>${pctTxt(tr.parts.speed)}</em></li>
+      <li>💀 <span>Eingegangen</span><em>${tr.deaths}×</em></li>
+    </ul>`;
+  $('#forest-dialog').showModal();
+}
 
 function healthColor(h) {
   if (h >= 60) return 'var(--accent)';
@@ -407,7 +465,7 @@ function treeBanner(t) {
 
 function renderTree() {
   const t = treeState();
-  $('#tree-stage-label').textContent = t.empty ? '' : `Stufe ${t.stage + 1} von ${Tree.STAGES.length} · ${t.stageName}`;
+  $('#tree-stage-label').textContent = t.empty ? '' : `${t.current.species.name} Nr. ${t.current.number} · Stufe ${t.stage + 1} von ${Tree.STAGES.length}`;
   if (t.empty) {
     $('#tree-content').innerHTML = `<div class="empty"><div class="big">🌰</div><p>Lege eine Gewohnheit an. Jede erledigte Gewohnheit lässt deinen Baum wachsen.</p></div>`;
     return;
@@ -445,6 +503,7 @@ function renderTree() {
       case 'missed': return ['🥀', `Nichts erledigt <span class="ev-delta">${e.delta} ❤️</span>`, date];
       case 'weak': return ['🍂', `${e.pct ?? '?'} % erledigt <span class="ev-delta">${e.delta} ❤️</span>`, date];
       case 'died': return ['💀', `Eingegangen: ${esc(e.from)} → ${esc(e.to)}`, date];
+      case 'planted': { const tier = Tree.TIERS.find((x) => x.key === e.tier) || Tree.TIERS[0]; return ['🌲', `In den Wald gepflanzt: <b>${tier.emoji} ${esc(e.species)} · ${esc(tier.label)}</b> (${e.score})`, date]; }
       default: return ['•', '', date];
     }
   };
@@ -455,7 +514,7 @@ function renderTree() {
 
   $('#tree-content').innerHTML = `
     <div class="card tree-card ${t.health < 20 ? 'sick' : ''}">
-      ${Tree.svg(t, treeSeed())}
+      ${Tree.svg(t, treeSeedFor(t.current.number, t.current.start), Tree.lookFor(t.current.species, null))}
       <div class="tree-name">${esc(t.stageName)}</div>
       <div class="tree-health-label" style="color:${healthColor(t.health)}">${Tree.healthLabel(t.health)}</div>
     </div>
@@ -467,6 +526,8 @@ function renderTree() {
       <div class="bar-row cans-row"><span>Gießkannen ${cans}</span><span class="muted-sm">${canText}</span></div>
       <p class="tree-today">${todayText}</p>
     </div>
+    ${qualityCardHtml(t)}
+    ${forestCardHtml(t)}
     ${focusCardHtml()}
     <div class="card">
       <h2>Chronik</h2>
@@ -481,6 +542,7 @@ function renderTree() {
         <li><b>Eingehen:</b> Fällt die Gesundheit auf 0, stirbt der Baum und fällt eine ganze Stufe zurück.</li>
         <li><b>Gießkannen:</b> Für ${Tree.RULES.canEvery} perfekte Tage in Folge gibt es eine Gießkanne (max. ${Tree.RULES.maxCans}). Sie rettet dich automatisch an einem Tag, an dem du unter 50 % bleibst.</li>
         <li>Tage ohne geplante Gewohnheiten zählen nicht.</li>
+        <li><b>Wald:</b> Bei ${Tree.FOREST_GOAL} Wachstum ist dein Baum ausgewachsen und kommt in deinen Wald, ein neuer Samen (zufällige Art) startet. Seine <b>Qualität</b> ergibt sich aus Ø Tagesquote (35 %), perfekten Tagen (25 %), Ø Gesundheit (25 %) und Tempo (15 %). Jedes Eingehen kostet 15 Punkte; einmal eingegangen ist höchstens „Gewöhnlich“, zweimal ein „Kümmerling“.</li>
       </ul>
     </details>`;
 }
@@ -772,13 +834,17 @@ document.addEventListener('click', (e) => {
       btn && btn.classList.add('pop');
       const s = currentStreak(h);
       const isToday = selectedKey === todayKey();
-      if (after.stage > before.stage) toast(`🌳 Dein Baum ist gewachsen: ${after.stageName}!`);
+      if (after.forest.length > before.forest.length) { const tr = after.forest[after.forest.length - 1]; toast(`🌲 Ausgewachsen! ${tr.tier.emoji} ${tr.tier.label} – ab in deinen Wald`); }
+      else if (after.stage > before.stage) toast(`🌳 Dein Baum ist gewachsen: ${after.stageName}!`);
       else if (after.cans > before.cans) toast('💧 Du hast eine Gießkanne verdient!');
       else if (isToday && after.today.planned && after.today.done >= after.today.planned) toast(`💧 Baum gegossen – +${Tree.RULES.perfect} Gesundheit`);
       else if (isToday && s > 1 && (s % 7 === 0 || s === 3 || s === 30 || s === 100)) toast(`🔥 ${s} Tage in Folge – stark!`);
     }
     return;
   }
+
+  const fo = t.closest('[data-forest]');
+  if (fo) return openForestDialog(Number(fo.dataset.forest));
 
   const res = t.closest('[data-resume]');
   if (res) {

@@ -16,6 +16,28 @@ const Tree = (() => {
     { name: 'Uralter Baum', min: 320 },
   ];
 
+  /** Ab so viel Wachstum ist ein Baum ausgewachsen und wird in den Wald gepflanzt. */
+  const FOREST_GOAL = 400;
+
+  /** Baumarten – jeder neue Baum bekommt eine (der erste ist immer eine Eiche). */
+  const SPECIES = [
+    { key: 'eiche', name: 'Eiche', leaves: ['#22c55e', '#16a34a', '#4ade80'], bark: '#8b5a2b', blossom: '#fde68a' },
+    { key: 'kirsche', name: 'Kirschbaum', leaves: ['#f9a8d4', '#f472b6', '#22c55e'], bark: '#7c4a3a', blossom: '#fff1f2' },
+    { key: 'ahorn', name: 'Ahorn', leaves: ['#dc2626', '#ef4444', '#f97316'], bark: '#6b4430', blossom: '#fde68a' },
+    { key: 'birke', name: 'Birke', leaves: ['#a3e635', '#84cc16', '#bef264'], bark: '#d6d3d1', blossom: '#fef9c3' },
+    { key: 'zeder', name: 'Zeder', leaves: ['#0d9488', '#0f766e', '#2dd4bf'], bark: '#5b4636', blossom: '#ccfbf1' },
+    { key: 'jacaranda', name: 'Jacaranda', leaves: ['#a78bfa', '#8b5cf6', '#c4b5fd'], bark: '#6b4f3a', blossom: '#f5f3ff' },
+  ];
+
+  /** Qualitätsklassen eines ausgewachsenen Baums. */
+  const TIERS = [
+    { key: 'weak', label: 'Kümmerlich', name: 'Kümmerling', emoji: '🥀', min: 0 },
+    { key: 'common', label: 'Gewöhnlich', name: 'Solider Baum', emoji: '🌱', min: 35 },
+    { key: 'rare', label: 'Selten', name: 'Kräftiger Baum', emoji: '🌿', min: 58 },
+    { key: 'epic', label: 'Episch', name: 'Prachtbaum', emoji: '💎', min: 78 },
+    { key: 'legend', label: 'Legendär', name: 'Weltenbaum', emoji: '🌟', min: 92 },
+  ];
+
   const RULES = {
     startHealth: 70,
     // Gesundheit pro Tag je nach Anteil erledigter Gewohnheiten, dazwischen linear:
@@ -154,7 +176,7 @@ const Tree = (() => {
    */
   function simulate(habits, log, todayK, extra) {
     const result = {
-      growth: 0, stage: 0, health: RULES.startHealth, cans: 0, perfectRun: 0,
+      growth: 0, stage: 0, health: RULES.startHealth, cans: 0, perfectRun: 0, forest: [], current: { number: 1, species: SPECIES[0], start: null, rating: null, days: 0 },
       events: [], today: { planned: 0, done: 0, full: 0 }, empty: !habits.length,
     };
     if (!habits.length) return finish(result);
@@ -164,6 +186,9 @@ const Tree = (() => {
     const today = parseKey(todayK);
     let { growth, health, cans, perfectRun } = result;
     const events = [{ type: 'start', key: firstKey }];
+    const forest = [];
+    const newLife = (start) => ({ start, days: 0, planned: 0, sumRatio: 0, perfect: 0, healthSum: 0, deaths: 0, earned: 0, potential: 0 });
+    let life = newLife(firstKey);
 
     for (let d = parseKey(firstKey); d <= today; d = addDays(d, 1)) {
       const k = keyOf(d);
@@ -172,6 +197,7 @@ const Tree = (() => {
       const planned = { length: sc.planned };
       const done = sc.done;
       const stageBefore = stageOf(growth);
+      const deathsBefore = life.deaths;
       growth += sc.growth;
 
       if (k === todayK) {
@@ -200,6 +226,7 @@ const Tree = (() => {
           }
         }
         if (health <= 0) {
+          life.deaths++;
           const lost = Math.max(0, stageOf(growth) - 1);
           events.push({ type: 'died', key: k, from: STAGES[stageOf(growth)].name, to: STAGES[lost].name });
           growth = STAGES[lost].min;
@@ -207,21 +234,67 @@ const Tree = (() => {
         }
       }
 
+      // Lebenslauf des aktuellen Baums: der heutige Tag zählt erst, wenn er geschafft ist
+      if (k !== todayK || (sc.planned && done >= sc.planned)) {
+        life.days++;
+        life.healthSum += health;
+        life.earned += sc.growth;
+        life.potential += sc.planned + RULES.focusMaxPerDay;
+        if (sc.planned) {
+          const ratio = Math.min(1, done / sc.planned);
+          life.planned++; life.sumRatio += ratio; if (ratio >= 1) life.perfect++;
+        }
+      }
+
       const stageAfter = stageOf(growth);
-      if (stageAfter > stageBefore) events.push({ type: 'grew', key: k, stage: STAGES[stageAfter].name });
+      if (stageAfter > stageBefore && life.deaths === deathsBefore) events.push({ type: 'grew', key: k, stage: STAGES[stageAfter].name });
+
+      // Ausgewachsen: ab in den Wald, ein neuer Samen startet
+      if (growth >= FOREST_GOAL) {
+        const tree = rateTree(life, forest.length, k);
+        forest.push(tree);
+        events.push({ type: 'planted', key: k, tier: tree.tier.key, species: tree.species.name, score: tree.score });
+        growth -= FOREST_GOAL;
+        life = newLife(keyOf(addDays(d, 1)));
+      }
     }
 
+    result.forest = forest;
+    result.current = { number: forest.length + 1, species: speciesFor(forest.length, life.start), start: life.start, rating: life.days >= 7 ? rateTree(life, forest.length, todayK) : null, days: life.days };
     Object.assign(result, { growth, health, cans, perfectRun, events });
     return finish(result);
+  }
+
+  function speciesFor(index, startKey) {
+    if (index === 0) return SPECIES[0];
+    return SPECIES[seedFrom(`${startKey}#${index}`) % SPECIES.length];
+  }
+
+  /** Qualität eines Baums aus seinem Lebenslauf (0–100) und daraus die Klasse. */
+  function rateTree(life, index, endKey) {
+    const ratio = life.planned ? life.sumRatio / life.planned : 0;
+    const perfect = life.planned ? life.perfect / life.planned : 0;
+    const health = life.days ? life.healthSum / life.days : 0;
+    const speed = life.potential ? Math.min(1, life.earned / life.potential) : 0;
+    const raw = 100 * (0.35 * ratio + 0.25 * perfect + 0.25 * (health / 100) + 0.15 * speed) - 15 * life.deaths;
+    const score = Math.max(0, Math.min(100, Math.round(raw)));
+    let tierIdx = TIERS.reduce((t, x, i) => (score >= x.min ? i : t), 0);
+    if (life.deaths >= 2) tierIdx = 0;
+    else if (life.deaths === 1) tierIdx = Math.min(tierIdx, 1);
+    return {
+      number: index + 1, species: speciesFor(index, life.start), start: life.start, end: endKey, days: life.days,
+      score, tier: TIERS[tierIdx], deaths: life.deaths,
+      parts: { ratio, perfect, health, speed },
+    };
   }
 
   function finish(r) {
     r.stage = stageOf(r.growth);
     r.stageName = STAGES[r.stage].name;
-    const next = STAGES[r.stage + 1];
-    r.nextName = next ? next.name : null;
-    r.nextMin = next ? next.min : null;
-    r.progress = next ? (r.growth - STAGES[r.stage].min) / (next.min - STAGES[r.stage].min) : 1;
+    const next = STAGES[r.stage + 1] || { name: '🌲 Wald', min: FOREST_GOAL };
+    r.nextName = next.name;
+    r.nextMin = next.min;
+    r.progress = Math.min(1, (r.growth - STAGES[r.stage].min) / (next.min - STAGES[r.stage].min));
 
     // Was passiert heute Nacht, wenn es beim aktuellen Stand bleibt?
     const { planned, done } = r.today;
@@ -274,14 +347,31 @@ const Tree = (() => {
 
   const f = (n) => n.toFixed(1);
 
-  function svg(t, seedStr) {
+  /** Aussehen aus Art und (bei Waldbäumen) Qualitätsklasse. */
+  function lookFor(species, tierKey) {
+    const sp = species || SPECIES[0];
+    const look = { leaves: sp.leaves, bark: sp.bark, blossom: sp.blossom };
+    switch (tierKey) {
+      case 'weak': return { ...look, leaves: ['#8aa36a', '#738c55', '#a3b98a'], density: 0.5, size: 0.72, noDeco: true };
+      case 'common': return { ...look, density: 0.8, size: 0.86, noDeco: true };
+      case 'rare': return { ...look, size: 0.95 };
+      case 'epic': return { ...look, blossomAlways: true, aura: '#c4b5fd' };
+      case 'legend': return { ...look, blossomAlways: true, fruit: '#facc15', aura: '#fde68a', sparkle: true };
+      default: return look;
+    }
+  }
+
+  function svg(t, seedStr, look = {}) {
     const W = 320, H = 300, gx = 160, gy = 262;
     const seed = seedFrom(seedStr || 'baum');
     const shape = rng(seed);
     const leafRng = rng(seed + 1);
-    const colors = palette(t.health);
-    const keep = t.health >= 40 ? 1 : t.health >= 20 ? 0.65 : t.health >= 8 ? 0.35 : 0.1;
-    const bark = t.health >= 20 ? '#8b5a2b' : '#7c6a58';
+    const colors = t.health >= 60 && look.leaves ? look.leaves : palette(t.health);
+    const keep = (t.health >= 40 ? 1 : t.health >= 20 ? 0.65 : t.health >= 8 ? 0.35 : 0.1) * (look.density || 1);
+    const bark = t.health >= 20 ? (look.bark || '#8b5a2b') : '#7c6a58';
+    const blossom = look.blossom || '#f9a8d4';
+    const fruit = look.fruit || '#dc2626';
+    const blossomFrom = look.blossomAlways ? 4 : 6;
     const branches = [];
     const leaves = [];
     const extras = [];
@@ -321,10 +411,10 @@ const Tree = (() => {
             else leafRng();
           }
           const deco = leafRng();
-          if (t.health >= 40 && t.stage >= 6 && deco < 0.45) {
-            extras.push(`<circle cx="${f(x2 + (leafRng() - 0.5) * leafR * 2)}" cy="${f(y2 + (leafRng() - 0.5) * leafR * 2)}" r="${f(leafR * 0.38)}" fill="#f9a8d4" stroke="#fff" stroke-width="0.8"/>`);
-          } else if (t.health >= 40 && t.stage >= 7 && deco > 0.75) {
-            extras.push(`<circle cx="${f(x2 + (leafRng() - 0.5) * leafR)}" cy="${f(y2 + leafR * (0.4 + leafRng() * 0.4))}" r="${f(leafR * 0.42)}" fill="#dc2626"/>`);
+          if (!look.noDeco && t.health >= 40 && t.stage >= blossomFrom && deco < 0.45) {
+            extras.push(`<circle cx="${f(x2 + (leafRng() - 0.5) * leafR * 2)}" cy="${f(y2 + (leafRng() - 0.5) * leafR * 2)}" r="${f(leafR * 0.38)}" fill="${blossom}" stroke="#fff" stroke-width="0.8"/>`);
+          } else if (!look.noDeco && t.health >= 40 && t.stage >= 7 && deco > (look.fruit ? 0.6 : 0.75)) {
+            extras.push(`<circle cx="${f(x2 + (leafRng() - 0.5) * leafR)}" cy="${f(y2 + leafR * (0.4 + leafRng() * 0.4))}" r="${f(leafR * 0.42)}" fill="${fruit}"${look.fruit ? ' stroke="#fff7d6" stroke-width="1"' : ''}/>`);
           } else { leafRng(); leafRng(); }
           return;
         }
@@ -350,13 +440,30 @@ const Tree = (() => {
     }
 
     const margin = 6;
-    const scale = Math.min(1, (gy - margin) / (gy - minY), (gx - margin) / (gx - minX), (W - margin - gx) / (maxX - gx || 1));
+    const scale = Math.min(1, (gy - margin) / (gy - minY), (gx - margin) / (gx - minX), (W - margin - gx) / (maxX - gx || 1)) * (look.size || 1);
+
+    // Legendär: goldener Schein und Funkeln
+    let aura = '', sparkles = '';
+    if (look.aura) {
+      const gid = `aura${seed % 100000}${look.sparkle ? 'g' : 'e'}`;
+      aura = `<defs><radialGradient id="${gid}"><stop offset="0" stop-color="${look.aura}" stop-opacity="${look.sparkle ? 0.75 : 0.55}"/><stop offset="1" stop-color="${look.aura}" stop-opacity="0"/></radialGradient></defs>
+        <ellipse cx="${gx}" cy="${f(gy - (gy - minY) * scale * 0.55)}" rx="150" ry="${f((gy - minY) * scale * 0.7)}" fill="url(#${gid})"/>`;
+    }
+    if (look.sparkle) {
+      const sr = rng(seed + 3);
+      for (let i = 0; i < 9; i++) {
+        const x = gx + (sr() - 0.5) * 260, y = gy - 30 - sr() * (gy - minY) * scale, r = 3 + sr() * 4;
+        sparkles += `<path d="M${f(x)} ${f(y - r)}L${f(x + r * 0.3)} ${f(y - r * 0.3)}L${f(x + r)} ${f(y)}L${f(x + r * 0.3)} ${f(y + r * 0.3)}L${f(x)} ${f(y + r)}L${f(x - r * 0.3)} ${f(y + r * 0.3)}L${f(x - r)} ${f(y)}L${f(x - r * 0.3)} ${f(y - r * 0.3)}Z" fill="#facc15"/>`;
+      }
+    }
     const fit = scale < 1 ? ` transform="translate(${f(gx * (1 - scale))} ${f(gy * (1 - scale))}) scale(${scale.toFixed(3)})"` : '';
 
     return `<svg class="tree-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${STAGES[t.stage].name}, Gesundheit ${t.health} Prozent">
+      ${aura}
       <ellipse cx="${gx}" cy="${gy + 6}" rx="120" ry="14" class="ground"/>
       ${fallen.join('')}
       <g class="tree-body"${fit}>${branches.join('')}<g class="canopy">${leaves.join('')}${extras.join('')}</g></g>
+      ${sparkles}
     </svg>`;
   }
 
@@ -416,7 +523,7 @@ const Tree = (() => {
   }
 
   return {
-    normalizeFocus, focusMinutes, focusGrowth,
+    normalizeFocus, focusMinutes, focusGrowth, FOREST_GOAL, SPECIES, TIERS, lookFor,
     isPaused, isDue, isCount, isWeekly, target, amount, isComplete, progressOf, weekCount, weeklyTimes, weekStart, dayScore, STAGES, RULES, simulate, svg, healthLabel, reminder, deltaFor, neededToSurvive };
 })();
 
