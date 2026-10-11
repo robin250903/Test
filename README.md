@@ -18,6 +18,9 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 - **Tagesablauf:** Tagestypen wie „Uni-Tag“ oder „Wochenende“ mit Zeitblöcken (Morgenroutine, Vorlesung, Essen, Sport …),
   die den Wochentagen zugeordnet werden. Für einzelne Tage lässt sich ein anderer Typ wählen. Die Live-Zeitleiste zeigt,
   was gerade läuft (mit Restzeit), was als Nächstes kommt und wo freie Zeit ist. Routine-Blöcke haben Schritte statt Häkchen
+- **Schritte abhaken & bearbeiten:** Die Schritte eines Blocks (z. B. Aufstehen → Duschen → Frühstück) werden heute
+  einzeln angetippt und abgehakt („✓ 2/4 Schritte“); am nächsten Tag beginnt die Liste wieder leer. Ein Tipp auf den
+  Block öffnet die Bearbeitung: Schritte umbenennen, löschen (×) oder hinzufügen – das gilt dauerhaft für den Tagestyp
 - **Gewohnheiten im Ablauf:** Blöcke können mehrere Gewohnheiten enthalten (z. B. Kreatin in der Morgenroutine), die direkt
   in der Zeitleiste abgehakt werden. Freie Lücken lassen sich per „+ Einplanen“ nur für heute füllen; fällige, noch nicht
   eingeplante Gewohnheiten werden angezeigt

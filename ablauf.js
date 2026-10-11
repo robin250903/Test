@@ -29,9 +29,24 @@ const durText = (m) => {
 const catOf = (b) => Plan.CATEGORIES[b.cat] || Plan.CATEGORIES.other;
 const blockEmoji = (b) => b.emoji || catOf(b).emoji;
 const findTpl = (id) => state.plan.templates.find((t) => t.id === id);
-const stepsHtml = (steps) => (steps.length
-  ? `<div class="steps-flow">${steps.map((s) => `<span>${esc(s)}</span>`).join('<i aria-hidden="true">→</i>')}</div>`
-  : '');
+/** Schritte eines Blocks; heute zum Abhaken, an anderen Tagen nur zur Ansicht. */
+function stepsHtml(steps, block) {
+  if (!steps.length) return '';
+  const interactive = block && isViewToday();
+  const done = block ? Plan.stepsDone(state.plan, viewDay(), block.id) : [];
+  const chips = steps.map((s) => {
+    const on = done.includes(s);
+    return interactive
+      ? `<button type="button" class="step ${on ? 'on' : ''}" data-pa="step" data-id="${esc(block.id)}" data-step="${esc(s)}" aria-pressed="${on}">${on ? '<b aria-hidden="true">✓</b>' : ''}${esc(s)}</button>`
+      : `<span>${esc(s)}</span>`;
+  });
+  return `<div class="steps-flow">${chips.join('<i aria-hidden="true">→</i>')}</div>`;
+}
+const stepCount = (b) => {
+  if (!b.steps.length || !isViewToday()) return '';
+  const n = Plan.stepsDone(state.plan, viewDay(), b.id).filter((s) => b.steps.includes(s)).length;
+  return ` · ${n === b.steps.length ? '✓ ' : ''}${n}/${b.steps.length} Schritte`;
+};
 
 function renderPlan() {
   const el = $('#plan-content');
@@ -210,7 +225,7 @@ function renderPlanToday(el, btn) {
       <div class="now-title">${esc(blockEmoji(c))} ${esc(c.title)}</div>
       <div class="now-meta">${c.e !== null ? `bis ${Plan.fmt(c.e)} · noch ${durText(c.e - now)}` : `seit ${c.start}`}</div>
       ${pct !== null ? `<div class="bar"><i style="width:${pct}%;background:var(--c)"></i></div>` : ''}
-      ${stepsHtml(c.steps)}
+      ${stepsHtml(c.steps, c)}
       ${habitChips(c.habitIds)}
       <button type="button" class="focus-btn" data-pa="focus" data-id="${esc(c.id)}">🎯 Fokus starten</button>
       ${st.next ? `<div class="now-next">Danach um <b>${st.next.start}</b>: ${esc(blockEmoji(st.next))} ${esc(st.next.title)}</div>` : ''}
@@ -221,7 +236,7 @@ function renderPlanToday(el, btn) {
       <div class="now-label">${st.before ? 'Dein Tag startet' : 'Als Nächstes'} in ${durText(n.s - now)}</div>
       <div class="now-title">${esc(blockEmoji(n))} ${esc(n.title)}</div>
       <div class="now-meta">um ${n.start}${n.e !== null ? ` · ${durText(n.e - n.s)}` : ''}</div>
-      ${stepsHtml(n.steps)}
+      ${stepsHtml(n.steps, n)}
     </div>`;
   } else if (items.length) {
     const tmr = Plan.addDays(today, 1);
@@ -279,9 +294,9 @@ function renderPlanToday(el, btn) {
         ${b.oneOff ? `<button type="button" class="one-off-del" data-pa="del-oneoff" data-id="${esc(b.id)}" aria-label="Aus dem heutigen Plan entfernen">×</button>` : ''}
         <button type="button" class="tl-main" data-pa="adjust" data-id="${esc(b.id)}" aria-label="${esc(b.title)} für diesen Tag anpassen">
           <div class="tl-title">${esc(blockEmoji(b))} ${esc(b.title)}</div>
-          <div class="tl-meta">${b.e !== null ? durText(b.e - b.s) : 'offen'}${b.oneOff ? ` · nur ${isToday ? 'heute' : 'an diesem Tag'}` : ''}${b.orig ? ` · <span class="moved">${b.orig.start !== b.start ? `verschoben, sonst ${b.orig.start}` : `angepasst, sonst bis ${b.orig.end || 'offen'}`}</span>` : ''}${isNow ? ' · <b>läuft gerade</b>' : ''}</div>
+          <div class="tl-meta">${b.e !== null ? durText(b.e - b.s) : 'offen'}${stepCount(b)}${b.oneOff ? ` · nur ${isToday ? 'heute' : 'an diesem Tag'}` : ''}${b.orig ? ` · <span class="moved">${b.orig.start !== b.start ? `verschoben, sonst ${b.orig.start}` : `angepasst, sonst bis ${b.orig.end || 'offen'}`}</span>` : ''}${isNow ? ' · <b>läuft gerade</b>' : ''}</div>
         </button>
-        ${isPast ? '' : stepsHtml(b.steps)}
+        ${isPast && Plan.stepsDone(state.plan, today, b.id).length >= b.steps.length ? '' : stepsHtml(b.steps, b)}
         ${habitChips(b.habitIds)}
         ${(() => { const td = Plan.blockTodos(state.plan, today, b.id); return td.length ? `<div class="block-todos">${td.map((t) => taskHtml(t, false, true)).join('')}</div>` : ''; })()}
         <button type="button" class="tl-add" data-pa="attach" data-id="${esc(b.id)}">＋ To-do / Gewohnheit</button>
@@ -535,14 +550,55 @@ function openAdjustDialog(blockId) {
   $('#adj-title').textContent = `${blockEmoji(b)} ${b.title}`;
   $('#adj-sub').textContent = b.oneOff
     ? `Nur ${when} eingeplant.`
-    : `Gilt nur für ${when} – dein Tagestyp „${tpl.name}“ bleibt unverändert.${b.orig ? ` Sonst ${b.orig.start}${b.orig.end ? '–' + b.orig.end : ''}.` : ''}`;
+    : `Zeiten gelten nur für ${when} – dein Tagestyp „${tpl.name}“ bleibt unverändert.${b.orig ? ` Sonst ${b.orig.start}${b.orig.end ? '–' + b.orig.end : ''}.` : ''}`;
   $('#adj-start').value = b.start;
   $('#adj-end').value = b.end || (b.e !== null ? Plan.fmt(b.e % 1440) : '');
   $('#adj-follow').checked = false;
   $('#btn-adj-reset').hidden = !b.orig;
   $('#btn-adj-template').hidden = b.oneOff;
+  adjusting.steps = [...b.steps];
+  $('#adj-steps-scope').textContent = b.oneOff ? '' : `(gilt für alle Tage mit „${tpl.name}“)`;
+  renderStepEditor();
   $('#btn-adj-skip').textContent = b.oneOff ? 'Entfernen' : `${isViewToday() ? 'Heute' : 'An diesem Tag'} auslassen`;
   adjustDialog.showModal();
+}
+
+function renderStepEditor() {
+  $('#adj-steps').innerHTML = adjusting.steps.map((s, i) => `<div class="step-row">
+      <input value="${esc(s)}" maxlength="60" data-step-i="${i}" aria-label="Schritt ${i + 1}">
+      <button type="button" data-step-del="${i}" aria-label="Schritt entfernen">×</button></div>`).join('')
+    || '<p class="muted-sm">Noch keine Schritte – z. B. für eine Routine.</p>';
+  $('#adj-step-add').hidden = adjusting.steps.length >= 12;
+}
+/** Aktuelle Eingaben übernehmen, damit nichts verloren geht, wenn die Liste neu gezeichnet wird. */
+function readStepEditor() {
+  document.querySelectorAll('#adj-steps [data-step-i]').forEach((el) => { adjusting.steps[Number(el.dataset.stepI)] = el.value; });
+}
+$('#adj-steps').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-step-del]');
+  if (!b) return;
+  readStepEditor();
+  adjusting.steps.splice(Number(b.dataset.stepDel), 1);
+  renderStepEditor();
+});
+$('#adj-step-add').addEventListener('click', () => {
+  readStepEditor();
+  adjusting.steps.push('');
+  renderStepEditor();
+  const inputs = document.querySelectorAll('#adj-steps [data-step-i]');
+  inputs[inputs.length - 1].focus();
+});
+
+/** Schritte speichern: Tagestyp-Blöcke dauerhaft, Einmal-Blöcke direkt. Gibt true zurück, wenn sich etwas geändert hat. */
+function saveSteps(day, id) {
+  readStepEditor();
+  const steps = adjusting.steps.map((s) => s.trim().slice(0, 60)).filter(Boolean).slice(0, 12);
+  const one = (state.plan.dayBlocks[day] || []).find((x) => x.id === id);
+  const tpl = Plan.templateFor(state.plan, day);
+  const target = one || (tpl && tpl.blocks.find((x) => x.id === id));
+  if (!target || JSON.stringify(target.steps) === JSON.stringify(steps)) return false;
+  target.steps = steps;
+  return true;
 }
 
 const shiftTime = (t, d) => Plan.fmt(((Plan.toMin(t) + d) % 1440 + 1440) % 1440);
@@ -586,7 +642,12 @@ $('#adjust-form').addEventListener('submit', (e) => {
   const cur = before.find((x) => x.id === id);
   const delta = Plan.toMin(start) - cur.s;
   const curEnd = cur.end || (cur.e !== null ? Plan.fmt(cur.e % 1440) : null);
-  if (!delta && end === curEnd) { adjustDialog.close(); return; } // nichts geändert
+  const stepsChanged = saveSteps(day, id);
+  if (!delta && end === curEnd) {
+    adjustDialog.close();
+    if (stepsChanged) { save(); renderPlan(); toast('Schritte gespeichert'); }
+    return;
+  }
   setBlockTimes(day, id, start, end === curEnd && !cur.end ? null : end);
   let moved = 0;
   if ($('#adj-follow').checked && delta) {
@@ -806,6 +867,26 @@ $('#plan-content').addEventListener('click', (e) => {
       return;
     case 'adjust':
       return openAdjustDialog(id);
+    case 'step': {
+      const k = viewDay();
+      const step = a.dataset.step;
+      const map = plan.stepLog[k] || (plan.stepLog[k] = {});
+      const list = map[id] || (map[id] = []);
+      const i = list.indexOf(step);
+      if (i >= 0) list.splice(i, 1); else list.push(step);
+      if (!list.length) delete map[id];
+      if (!Object.keys(map).length) delete plan.stepLog[k];
+      // Alte Tage aufräumen
+      const cutoff = Plan.addDays(todayKey(), -14);
+      for (const d of Object.keys(plan.stepLog)) if (d < cutoff) delete plan.stepLog[d];
+      save();
+      if (i < 0) {
+        if (navigator.vibrate) navigator.vibrate(10);
+        const blk = Plan.dayTimeline(plan, k).find((b) => b.id === id);
+        if (blk && blk.steps.every((s) => (plan.stepLog[k][id] || []).includes(s))) toast(`✓ ${blockEmoji(blk)} ${blk.title} erledigt`);
+      }
+      break;
+    }
     case 'focus': {
       const blk = Plan.dayTimeline(plan, viewDay()).find((b) => b.id === id);
       return openFocusDialog({ label: blk ? blk.title : 'Fokus', blockId: id });

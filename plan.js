@@ -30,7 +30,7 @@ const Plan = (() => {
   const idOk = (v) => typeof v === 'string' && /^[\w-]{1,40}$/.test(v);
   const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-  const empty = () => ({ templates: [], weekdays: [null, null, null, null, null, null, null], overrides: {}, tasks: [], dayBlocks: {}, dayEdits: {}, dayHabits: {} });
+  const empty = () => ({ templates: [], weekdays: [null, null, null, null, null, null, null], overrides: {}, tasks: [], dayBlocks: {}, dayEdits: {}, dayHabits: {}, stepLog: {} });
 
   const addDays = (k, n) => { const d = parseKey(k); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
   /** Sonntag der Woche, in der das Datum liegt (Woche Mo–So). */
@@ -100,6 +100,17 @@ const Plan = (() => {
         if (Object.keys(day).length) out.dayHabits[k] = day;
       }
     }
+    // Abgehakte Schritte: { datum: { blockId: [Schritt-Text] } }
+    if (p.stepLog && typeof p.stepLog === 'object') {
+      for (const [k, map] of Object.entries(p.stepLog)) {
+        if (!DATE.test(k) || !map || typeof map !== 'object') continue;
+        const day = {};
+        for (const [id, list] of Object.entries(map)) {
+          if (idOk(id) && Array.isArray(list)) { const done = [...new Set(list.map((x) => str(x, 60)).filter(Boolean))].slice(0, 12); if (done.length) day[id] = done; }
+        }
+        if (Object.keys(day).length) out.stepLog[k] = day;
+      }
+    }
     if (p.dayBlocks && typeof p.dayBlocks === 'object') {
       for (const [k, list] of Object.entries(p.dayBlocks)) {
         if (DATE.test(k) && Array.isArray(list)) out.dayBlocks[k] = list.filter(validBlock).slice(0, 30).map(normBlock);
@@ -154,6 +165,9 @@ const Plan = (() => {
       return add.length ? { ...b, habitIds: [...b.habitIds, ...add], dayHabitIds: add } : b;
     });
   }
+  /** Welche Schritte eines Blocks sind an diesem Tag abgehakt? */
+  const stepsDone = (plan, dateK, blockId) => ((plan.stepLog[dateK] || {})[blockId] || []);
+
   /** To-dos, die an diesem Tag in einem bestimmten Block erledigt werden sollen. */
   const blockTodos = (plan, dateK, blockId) => plan.tasks.filter((t) => t.slot && t.slot.date === dateK && t.slot.blockId === blockId);
   /** Blöcke des Tagestyps, die an diesem Tag ausgelassen werden. */
@@ -235,7 +249,7 @@ const Plan = (() => {
 
   return {
     CATEGORIES, TIME, empty, normalize, templateFor, timeline, dayTimeline, skippedBlocks, status, summary, starter, toMin, fmt, newId,
-    dayTodos, weekTodos, overdueTodos, todoStatus, weekEnd, addDays, blockTodos,
+    dayTodos, weekTodos, overdueTodos, todoStatus, weekEnd, addDays, blockTodos, stepsDone,
   };
 })();
 

@@ -749,3 +749,13 @@ body.focus-open { overflow: hidden; }
 .forest-dialog .review-list { text-align: left; }
 .forest-big { max-width: 260px; margin: 0 auto; }
 .forest-dialog .muted-sm { display: block; text-align: center; }
+
+/* Schritte abhaken & bearbeiten */
+.steps-flow .step { border: 1px solid color-mix(in srgb, var(--c, var(--muted)) 30%, transparent); background: color-mix(in srgb, var(--c, var(--muted)) 10%, var(--surface)); border-radius: 999px; padding: 4px 11px; font-size: 13px; color: var(--text); }
+.steps-flow .step.on { background: var(--c, var(--accent)); border-color: var(--c, var(--accent)); color: #fff; text-decoration: line-through; text-decoration-color: rgb(255 255 255 / 0.7); }
+.steps-flow .step b { margin-right: 4px; text-decoration: none; display: inline-block; }
+.step-edit { display: grid; gap: 6px; }
+.step-row { display: flex; gap: 6px; }
+.step-row input { flex: 1; min-width: 0; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 10px; padding: 9px 10px; font-size: 16px; }
+.step-row button { width: 40px; flex: none; border: 1px solid var(--border); background: var(--surface-2); border-radius: 10px; font-size: 20px; color: var(--muted); }
+.step-add { margin: 6px 0 0; padding: 4px 0; display: inline-block; text-align: left; }
