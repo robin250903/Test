@@ -16,6 +16,8 @@ function dayLabel(k, long = false) {
   if (k === Plan.addDays(today, 1)) return 'Morgen';
   return new Intl.DateTimeFormat('de-DE', long ? { weekday: 'long', day: 'numeric', month: 'short' } : { weekday: 'short' }).format(parseKey(k));
 }
+/** Tag mitten im Satz: „morgen“ statt „Morgen“. */
+const dayInText = (k) => (k === Plan.addDays(todayKey(), 1) ? 'morgen' : dayLabel(k, true));
 let editTplId = null;
 let editingBlock = null; // { tplId, blockId | null, cat, habitIds }
 let slotDraft = null; // { habitIds: Set, todoId }
@@ -211,7 +213,7 @@ function renderPlanToday(el, btn) {
     const todos = Plan.dayTodos(state.plan, today).length;
     const first = items[0];
     nowCard = `<div class="now-card plan-card" style="--c:#7c3aed">
-      <div class="now-label">Planung für ${esc(dayLabel(today, true))}</div>
+      <div class="now-label">Planung für ${esc(dayInText(today))}</div>
       <div class="now-title">${first ? `${esc(blockEmoji(first))} Start um ${first.start}` : '🌴 Noch nichts geplant'}</div>
       <div class="now-meta">${items.length} Blöcke · ${durText(free)} freie Zeit · ${todos} To-do${todos === 1 ? '' : 's'}</div>
       <div class="now-next">Tippe bei freier Zeit auf <b>+ Einplanen</b>, um Gewohnheiten, To-dos oder Termine für diesen Tag festzulegen.</div>
@@ -314,7 +316,7 @@ function renderPlanToday(el, btn) {
       ? `<button type="button" class="link-btn" data-pa="reset-day">↺ Alle Anpassungen für ${isToday ? 'heute' : 'diesen Tag'} zurücksetzen</button>`
       : '');
   const timelineHtml = (rows.length
-    ? `<ol class="timeline">${tl}</ol>`
+    ? `<ol class="timeline">${tl}</ol><button type="button" class="btn btn-ghost tl-new" data-pa="new-event">＋ Eigenen Termin eintragen</button>`
     : `<div class="empty"><div class="big">🌴</div><p>${tpl ? 'Dieser Tagestyp hat noch keine Zeitblöcke.' : `${isToday ? 'Heute' : 'An diesem Tag'} ist kein Ablauf geplant. Genieß den Tag!`}</p>
        <button type="button" class="btn btn-ghost" data-pa="fill-gap" data-s="${now < 0 ? 540 : Math.ceil(now / 15) * 15}" data-e="${(now < 0 ? 540 : Math.ceil(now / 15) * 15) + 60}">+ Etwas einplanen</button></div>`) + skippedHtml;
 
@@ -457,23 +459,109 @@ $('#btn-block-delete').addEventListener('click', () => {
 });
 blockDialog.addEventListener('click', (e) => { if (e.target === blockDialog) blockDialog.close(); });
 
+/* ----- Eigene Termine: Symbol & Art ----- */
+
+const EVENT_EMOJIS = '📌 🩺 🛒 🎂 🎉 ☕ 🍕 🍻 🚆 ✈️ 💇 🏋️ 📞 👥 🎬 🎵 🧹 ❤️'.split(' ');
+// Aus dem Namen ein passendes Symbol (und eine Art) erraten, solange man nichts selbst gewählt hat
+const EVENT_GUESS = [
+  [/zahnarzt|arzt|ärzt|physio|praxis|impf/, '🩺', 'other'],
+  [/einkauf|supermarkt|rewe|aldi|lidl|edeka|dm\b/, '🛒', 'other'],
+  [/geburtstag|bday/, '🎂', 'free'],
+  [/party|feier|fete/, '🎉', 'free'],
+  [/kaffee|café|cafe/, '☕', 'free'],
+  [/pizza|döner|burger|restaurant|mensa|essen|frühstück|brunch|kochen/, '', 'food'],
+  [/\bbar\b|bier|drinks|kneipe/, '🍻', 'free'],
+  [/zug|bahn|\bbus\b|fahrt/, '🚆', 'other'],
+  [/flug|flughafen/, '✈️', 'other'],
+  [/friseur|frisör/, '💇', 'other'],
+  [/gym|training|fitness|workout/, '🏋️', 'sport'],
+  [/joggen|laufen|fußball|fussball|schwimmen|radfahren/, '', 'sport'],
+  [/anruf|telefon|\bcall\b/, '📞', 'other'],
+  [/meeting|besprechung|gruppenarbeit/, '👥', 'work'],
+  [/treffen|freunde|besuch/, '👥', 'free'],
+  [/kino|film|serie/, '🎬', 'free'],
+  [/konzert|musik|gitarre|klavier|band/, '🎵', 'free'],
+  [/putzen|aufräumen|haushalt|wäsche/, '🧹', 'other'],
+  [/\bdate\b|freundin|freund\b/, '❤️', 'free'],
+  [/vorlesung|seminar|tutorium|übung|\buni\b/, '', 'work'],
+  [/lernen|klausur|prüfung|hausarbeit|bewerbung/, '', 'focus'],
+  [/arbeit|schicht|\bjob\b|werkstudent/, '💼', 'work'],
+  [/schlaf|nickerchen/, '', 'sleep'],
+  [/zocken|gaming|playstation/, '🎮', 'free'],
+];
+function guessEvent(title) {
+  const t = title.toLowerCase();
+  const hit = EVENT_GUESS.find(([re]) => re.test(t));
+  return hit ? { emoji: hit[1], cat: hit[2] } : null;
+}
+
+/**
+ * Verdrahtet Symbol-Feld, Schnellauswahl und Art-Chips eines Dialogs.
+ * draft hält { cat, emojiTouched, catTouched }; der Name schlägt Symbol und Art vor.
+ */
+function eventMetaUi({ emoji, picks, cats, title }) {
+  const ui = {
+    draft: null,
+    open(d) {
+      ui.draft = d;
+      $(emoji).value = d.emoji || '';
+      ui.render();
+    },
+    render() {
+      const d = ui.draft;
+      const cur = $(emoji).value.trim();
+      $(emoji).placeholder = Plan.CATEGORIES[d.cat].emoji;
+      $(picks).innerHTML = EVENT_EMOJIS.map((x) => `<button type="button" data-emoji="${x}" aria-label="Symbol ${x}" aria-pressed="${x === cur}">${x}</button>`).join('');
+      $(cats).innerHTML = Object.entries(Plan.CATEGORIES).filter(([k]) => k !== 'habit' || d.cat === 'habit')
+        .map(([k, c]) => `<button type="button" data-cat="${k}" style="--c:${c.color}" aria-pressed="${k === d.cat}">${c.emoji} ${c.name}</button>`).join('');
+    },
+    value: () => $(emoji).value.trim().slice(0, 8),
+  };
+  $(picks).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-emoji]');
+    if (!b) return;
+    const same = $(emoji).value.trim() === b.dataset.emoji;
+    $(emoji).value = same ? '' : b.dataset.emoji;
+    ui.draft.emojiTouched = !same;
+    ui.render();
+  });
+  $(cats).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cat]');
+    if (!b) return;
+    ui.draft.cat = b.dataset.cat;
+    ui.draft.catTouched = true;
+    ui.render();
+  });
+  $(emoji).addEventListener('input', () => { ui.draft.emojiTouched = !!$(emoji).value.trim(); ui.render(); });
+  $(title).addEventListener('input', () => {
+    const d = ui.draft;
+    const g = guessEvent($(title).value);
+    if (!d.emojiTouched) $(emoji).value = g ? g.emoji : '';
+    if (!d.catTouched) d.cat = g ? g.cat : d.baseCat;
+    ui.render();
+  });
+  return ui;
+}
+
 /* ----- Dialog: Freie Zeit einplanen (nur für heute) ----- */
 
 const slotDialog = $('#slot-dialog');
+const slotMeta = eventMetaUi({ emoji: '#s-emoji', picks: '#s-emoji-picks', cats: '#s-cats', title: '#s-custom' });
 const roundUp = (m, step) => Math.ceil(m / step) * step;
 
-function openSlotDialog(gapS, gapE, habitId) {
+function openSlotDialog(gapS, gapE, habitId, free = true) {
   const now = viewNow();
   const start = gapS <= now && now < gapE ? Math.min(roundUp(now, 5), gapE - 5) : gapS;
   const end = Math.min(gapE, start + 30);
   const items = Plan.dayTimeline(state.plan, viewDay());
   const unplanned = unplannedHabits(items).map((h) => h.id);
   slotDraft = { habitIds: new Set(habitId ? [habitId] : []), todoId: null };
-  const only = isViewToday() ? 'gilt nur für heute' : `gilt nur für ${dayLabel(viewDay(), true)}`;
-  $('#slot-sub').textContent = gapE > gapS ? `Freie Zeit von ${Plan.fmt(gapS)} bis ${Plan.fmt(gapE % 1440)} · ${only}` : only[0].toUpperCase() + only.slice(1);
+  const only = isViewToday() ? 'gilt nur für heute' : `gilt nur für ${dayInText(viewDay())}`;
+  $('#slot-sub').textContent = free && gapE > gapS ? `Freie Zeit von ${Plan.fmt(gapS)} bis ${Plan.fmt(gapE % 1440)} · ${only}` : only[0].toUpperCase() + only.slice(1);
   $('#s-start').value = Plan.fmt(start % 1440);
   $('#s-end').value = Plan.fmt(end % 1440);
   $('#s-custom').value = '';
+  slotMeta.open({ cat: 'other', baseCat: 'other', emoji: '' });
   renderHabitPick('#s-habits', slotDraft.habitIds, unplanned);
   $('#s-habits-field').hidden = !state.habits.length;
   const today = viewDay();
@@ -506,7 +594,7 @@ $('#slot-form').addEventListener('submit', (e) => {
   const habits = state.habits.filter((h) => slotDraft.habitIds.has(h.id));
   const todo = state.plan.tasks.find((t) => t.id === slotDraft.todoId);
   if (!Plan.TIME.test(start)) return toast('Bitte eine Startzeit wählen.');
-  if (!habits.length && !todo && !custom) return toast('Wähle eine Gewohnheit, ein To-do oder schreib etwas hinein.');
+  if (!habits.length && !todo && !custom) return toast('Schreib hinein, was ansteht – oder wähle eine Gewohnheit oder ein To-do.');
 
   const today = viewDay();
   const list = state.plan.dayBlocks[today] || (state.plan.dayBlocks[today] = []);
@@ -517,8 +605,8 @@ $('#slot-form').addEventListener('submit', (e) => {
     const title = custom || (todo && !habits.length ? todo.title : habits.map((h) => h.name).join(' & '));
     list.push({
       id: Plan.newId(), start, end, title: title.slice(0, 60),
-      emoji: custom ? '📌' : todo && !habits.length ? '📝' : habits[0].emoji,
-      cat: habits.length ? 'habit' : 'other', steps: todo && (habits.length || custom) ? [todo.title.slice(0, 60)] : [],
+      emoji: custom ? slotMeta.value() : todo && !habits.length ? '📝' : habits[0].emoji,
+      cat: custom ? slotMeta.draft.cat : habits.length ? 'habit' : 'other', steps: todo && (habits.length || custom) ? [todo.title.slice(0, 60)] : [],
       habitIds: habits.map((h) => h.id),
     });
     if (todo && !todo.week) todo.time = start;
@@ -529,7 +617,7 @@ $('#slot-form').addEventListener('submit', (e) => {
   save();
   slotDialog.close();
   renderPlan();
-  toast(`Für ${isViewToday() ? 'heute' : dayLabel(viewDay(), true)} eingeplant`);
+  toast(`Für ${isViewToday() ? 'heute' : dayInText(viewDay())} eingeplant`);
 });
 $('#btn-slot-cancel').addEventListener('click', () => slotDialog.close());
 slotDialog.addEventListener('click', (e) => { if (e.target === slotDialog) slotDialog.close(); });
@@ -537,6 +625,7 @@ slotDialog.addEventListener('click', (e) => { if (e.target === slotDialog) slotD
 /* ----- Dialog: Block nur für diesen Tag anpassen ----- */
 
 const adjustDialog = $('#adjust-dialog');
+const adjMeta = eventMetaUi({ emoji: '#adj-emoji', picks: '#adj-emoji-picks', cats: '#adj-cats', title: '#adj-name' });
 let adjusting = null; // { day, id, oneOff, tplId }
 
 function openAdjustDialog(blockId) {
@@ -546,7 +635,7 @@ function openAdjustDialog(blockId) {
   if (!b) return;
   const tpl = Plan.templateFor(state.plan, day);
   adjusting = { day, id: b.id, oneOff: !!b.oneOff, tplId: tpl && !b.oneOff ? tpl.id : null };
-  const when = isViewToday() ? 'heute' : dayLabel(day, true);
+  const when = isViewToday() ? 'heute' : dayInText(day);
   $('#adj-title').textContent = `${blockEmoji(b)} ${b.title}`;
   $('#adj-sub').textContent = b.oneOff
     ? `Nur ${when} eingeplant.`
@@ -557,6 +646,12 @@ function openAdjustDialog(blockId) {
   $('#btn-adj-reset').hidden = !b.orig;
   $('#btn-adj-template').hidden = b.oneOff;
   adjusting.steps = [...b.steps];
+  $('#adj-meta').hidden = !b.oneOff;
+  if (b.oneOff) {
+    $('#adj-name').value = b.title;
+    // Bereits gewählte Symbole/Arten nicht mehr automatisch überschreiben
+    adjMeta.open({ cat: b.cat, baseCat: b.cat, emoji: b.emoji, emojiTouched: true, catTouched: true });
+  }
   $('#adj-steps-scope').textContent = b.oneOff ? '' : `(gilt für alle Tage mit „${tpl.name}“)`;
   renderStepEditor();
   $('#btn-adj-skip').textContent = b.oneOff ? 'Entfernen' : `${isViewToday() ? 'Heute' : 'An diesem Tag'} auslassen`;
@@ -598,6 +693,16 @@ function saveSteps(day, id) {
   const target = one || (tpl && tpl.blocks.find((x) => x.id === id));
   if (!target || JSON.stringify(target.steps) === JSON.stringify(steps)) return false;
   target.steps = steps;
+  return true;
+}
+
+/** Name, Symbol und Art eines eigenen Termins übernehmen. Gibt true zurück, wenn sich etwas geändert hat. */
+function saveEventMeta(day, id) {
+  const one = (state.plan.dayBlocks[day] || []).find((x) => x.id === id);
+  if (!one) return false;
+  const next = { title: $('#adj-name').value.trim().slice(0, 60) || one.title, emoji: adjMeta.value(), cat: adjMeta.draft.cat };
+  if (next.title === one.title && next.emoji === one.emoji && next.cat === one.cat) return false;
+  Object.assign(one, next);
   return true;
 }
 
@@ -643,9 +748,10 @@ $('#adjust-form').addEventListener('submit', (e) => {
   const delta = Plan.toMin(start) - cur.s;
   const curEnd = cur.end || (cur.e !== null ? Plan.fmt(cur.e % 1440) : null);
   const stepsChanged = saveSteps(day, id);
+  const metaChanged = saveEventMeta(day, id);
   if (!delta && end === curEnd) {
     adjustDialog.close();
-    if (stepsChanged) { save(); renderPlan(); toast('Schritte gespeichert'); }
+    if (stepsChanged || metaChanged) { save(); renderPlan(); toast(metaChanged ? 'Gespeichert' : 'Schritte gespeichert'); }
     return;
   }
   setBlockTimes(day, id, start, end === curEnd && !cur.end ? null : end);
@@ -916,6 +1022,12 @@ $('#plan-content').addEventListener('click', (e) => {
     }
     case 'fill-gap':
       return openSlotDialog(Number(a.dataset.s), Number(a.dataset.e), null);
+    case 'new-event': {
+      const now = viewNow();
+      const gap = freeGaps(Plan.dayTimeline(plan, viewDay()), now)[0];
+      const s0 = now < 0 ? 9 * 60 : roundUp(now, 15);
+      return gap ? openSlotDialog(gap.s, gap.e, null) : openSlotDialog(s0, s0 + 60, null, false);
+    }
     case 'plan-habit': {
       const now = viewNow();
       const gap = freeGaps(Plan.dayTimeline(plan, viewDay()), now)[0];

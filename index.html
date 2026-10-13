@@ -206,13 +206,21 @@
     <form method="dialog" id="slot-form">
       <h2>Einplanen</h2>
       <p class="muted" id="slot-sub"></p>
+      <div class="field">
+        <span>Was steht an?</span>
+        <div class="title-row">
+          <input id="s-emoji" class="emoji-in" maxlength="8" autocomplete="off" aria-label="Symbol">
+          <input id="s-custom" maxlength="60" autocomplete="off" placeholder="z. B. Arzttermin, Einkaufen, Geburtstag">
+        </div>
+        <div class="emoji-picks compact" id="s-emoji-picks"></div>
+      </div>
+      <div class="field"><span>Art</span><div class="cat-chips" id="s-cats"></div></div>
       <div class="time-row two">
         <label class="field"><span>Von</span><input type="time" id="s-start" required></label>
         <label class="field"><span>Bis</span><input type="time" id="s-end"></label>
       </div>
-      <div class="field" id="s-habits-field"><span>Gewohnheiten</span><div class="habit-pick" id="s-habits"></div></div>
-      <div class="field" id="s-todos-field"><span>To-do</span><div class="habit-pick" id="s-todos"></div></div>
-      <label class="field"><span>Oder etwas Eigenes</span><input id="s-custom" maxlength="60" autocomplete="off" placeholder="z. B. Einkaufen, Mittagsschlaf"></label>
+      <div class="field" id="s-habits-field"><span>Gewohnheiten <small>(optional)</small></span><div class="habit-pick" id="s-habits"></div></div>
+      <div class="field" id="s-todos-field"><span>To-do <small>(optional)</small></span><div class="habit-pick" id="s-todos"></div></div>
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" id="btn-slot-cancel">Abbrechen</button>
         <button type="submit" class="btn">Einplanen</button>
@@ -224,6 +232,15 @@
     <form method="dialog" id="adjust-form">
       <h2 id="adj-title">Block anpassen</h2>
       <p class="muted" id="adj-sub"></p>
+      <div class="field" id="adj-meta" hidden>
+        <span>Name &amp; Symbol</span>
+        <div class="title-row">
+          <input id="adj-emoji" class="emoji-in" maxlength="8" autocomplete="off" aria-label="Symbol">
+          <input id="adj-name" maxlength="60" autocomplete="off" aria-label="Name">
+        </div>
+        <div class="emoji-picks compact" id="adj-emoji-picks"></div>
+        <div class="cat-chips" id="adj-cats"></div>
+      </div>
       <div class="shift-row" id="adj-shifts">
         <button type="button" data-shift="-30">−30</button>
         <button type="button" data-shift="-15">−15</button>

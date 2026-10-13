@@ -24,6 +24,9 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 - **Gewohnheiten im Ablauf:** Blöcke können mehrere Gewohnheiten enthalten (z. B. Kreatin in der Morgenroutine), die direkt
   in der Zeitleiste abgehakt werden. Freie Lücken lassen sich per „+ Einplanen“ nur für heute füllen; fällige, noch nicht
   eingeplante Gewohnheiten werden angezeigt
+- **Eigene Termine:** Über „＋ Eigenen Termin eintragen“ (oder „+ Einplanen“ in freier Zeit) kommen einmalige Termine
+  wie Arzt, Einkaufen oder Geburtstag in einen Tag – mit eigenem Emoji und einer Art, die die Farbe bestimmt. Beim Tippen
+  wird ein passendes Symbol vorgeschlagen; Name, Symbol und Art lassen sich später per Tipp auf den Termin ändern
 - **In Blöcken erledigen:** Über „＋ To-do / Gewohnheit“ lassen sich To-dos und (nur für diesen Tag) Gewohnheiten in
   einen Block legen, z. B. Kreatin in die Morgenroutine oder eine Mail in die Uni-Pause. Umgekehrt ordnet der
   📍-Button ein To-do einem Block oder einer Uhrzeit zu. Abgehakt wird direkt im Block
