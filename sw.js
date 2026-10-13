@@ -1,5 +1,5 @@
 // Offline-Cache für die App-Hülle. Bei Änderungen an den Dateien VERSION erhöhen.
-const VERSION = 'v14';
+const VERSION = 'v15';
 
 importScripts('tree.js', 'idb.js', 'plan.js');
 const CACHE = `gewohnheiten-${VERSION}`;
@@ -12,6 +12,7 @@ const ASSETS = [
   'plan.js',
   'app.js',
   'ablauf.js',
+  'calendar.js',
   'focus.js',
   'review.js',
   'manifest.webmanifest',

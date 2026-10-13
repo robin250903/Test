@@ -206,6 +206,10 @@ const Plan = (() => {
     } else if (plan.templates.length) {
       parts.push(`${prefix}: freier Tag`);
     }
+    const events = (plan.dayBlocks[dateK] || []).filter((b) => b.cat !== 'habit').sort((a, b) => toMin(a.start) - toMin(b.start));
+    if (events.length) {
+      parts.push(events.slice(0, 2).map((b) => `${b.start} ${b.emoji || CATEGORIES[b.cat].emoji} ${b.title}`).join(', ') + (events.length > 2 ? ` +${events.length - 2}` : ''));
+    }
     if (tasks) parts.push(`${tasks} To-do${tasks === 1 ? '' : 's'}`);
     return parts.join(' · ');
   }

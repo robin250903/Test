@@ -4,10 +4,11 @@
 
 let planMode = 'today'; // 'today' | 'edit'
 let planDay = null;     // angesehener Tag (Datum) oder null = heute
-const PLAN_AHEAD = 6;   // so viele Tage im Voraus planbar
+const PLAN_AHEAD = 5;   // so viele Tage stehen in der Tagesleiste, weiter weg geht's über den Kalender
+const CAL_AHEAD = 400;  // so weit im Voraus lässt sich im Kalender planen
 
 /** Angesehener Tag; vergangene Auswahl springt automatisch auf heute zurück. */
-const viewDay = () => (planDay && planDay > todayKey() && planDay <= Plan.addDays(todayKey(), PLAN_AHEAD) ? planDay : todayKey());
+const viewDay = () => (planDay && planDay > todayKey() && planDay <= Plan.addDays(todayKey(), CAL_AHEAD) ? planDay : todayKey());
 const isViewToday = () => viewDay() === todayKey();
 const viewNow = () => (isViewToday() ? minNow() : -1);
 function dayLabel(k, long = false) {
@@ -71,6 +72,7 @@ function renderPlan() {
   }
   btn.hidden = false;
   if (planMode === 'edit') renderPlanEditor(el, btn);
+  else if (planMode === 'cal') renderCalendar(el, btn);
   else renderPlanToday(el, btn);
 }
 
@@ -189,7 +191,12 @@ function renderPlanToday(el, btn) {
     const n = Plan.dayTodos(state.plan, k).filter((x) => !x.done).length + (state.plan.dayBlocks[k] || []).length + Object.keys(state.plan.dayEdits[k] || {}).length;
     return `<button type="button" data-pa="day" data-k="${k}" aria-pressed="${k === today}">
       <b>${esc(dayLabel(k))}</b><span>${t ? esc(t.emoji) : '🌴'}${n ? '<i></i>' : ''}</span></button>`;
-  }).join('')}</nav>`;
+  }).join('')}${(() => {
+    // Letzter Platz: Kalender – oder der dort gewählte Tag, wenn er weiter weg liegt
+    const far = today > Plan.addDays(todayKey(), PLAN_AHEAD);
+    return `<button type="button" data-pa="calendar" aria-pressed="${far}" aria-label="Kalender öffnen">
+      <b>${far ? esc(shortDate(today)) : 'Kalender'}</b><span>📅</span></button>`;
+  })()}</nav>`;
   $('#plan-title').textContent = tpl ? `${tpl.emoji} ${tpl.name}` : '🌴 Freier Tag';
   btn.textContent = 'Bearbeiten';
 
@@ -544,6 +551,14 @@ function eventMetaUi({ emoji, picks, cats, title }) {
 }
 
 /* ----- Dialog: Freie Zeit einplanen (nur für heute) ----- */
+
+/** Eigenen Termin für den angesehenen Tag eintragen: in die erste freie Lücke, sonst ab jetzt bzw. 9 Uhr. */
+function openNewEvent() {
+  const now = viewNow();
+  const gap = freeGaps(Plan.dayTimeline(state.plan, viewDay()), now)[0];
+  const s0 = now < 0 ? 9 * 60 : roundUp(now, 15);
+  return gap ? openSlotDialog(gap.s, gap.e, null) : openSlotDialog(s0, s0 + 60, null, false);
+}
 
 const slotDialog = $('#slot-dialog');
 const slotMeta = eventMetaUi({ emoji: '#s-emoji', picks: '#s-emoji-picks', cats: '#s-cats', title: '#s-custom' });
@@ -915,7 +930,8 @@ placeDialog.addEventListener('click', (e) => { if (e.target === placeDialog) pla
 /* ----- Ereignisse ----- */
 
 $('#plan-head-btn').addEventListener('click', () => {
-  planMode = planMode === 'edit' ? 'today' : 'edit';
+  if (planMode === 'cal') planDay = null;
+  planMode = planMode === 'today' ? 'edit' : 'today';
   window.scrollTo(0, 0);
   renderPlan();
   if (planMode === 'today') scrollToNow();
@@ -1022,12 +1038,10 @@ $('#plan-content').addEventListener('click', (e) => {
     }
     case 'fill-gap':
       return openSlotDialog(Number(a.dataset.s), Number(a.dataset.e), null);
-    case 'new-event': {
-      const now = viewNow();
-      const gap = freeGaps(Plan.dayTimeline(plan, viewDay()), now)[0];
-      const s0 = now < 0 ? 9 * 60 : roundUp(now, 15);
-      return gap ? openSlotDialog(gap.s, gap.e, null) : openSlotDialog(s0, s0 + 60, null, false);
-    }
+    case 'new-event':
+      return openNewEvent();
+    case 'calendar':
+      return openCalendar(viewDay());
     case 'plan-habit': {
       const now = viewNow();
       const gap = freeGaps(Plan.dayTimeline(plan, viewDay()), now)[0];

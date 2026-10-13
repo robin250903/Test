@@ -567,6 +567,35 @@ dialog h2 { font-size: 20px; margin-bottom: 16px; }
 .plan-days button[aria-pressed="true"] b { color: var(--text); }
 .plan-card .now-title { font-size: 22px; }
 
+/* Kalender */
+.cal-card { padding: 12px 10px; }
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-nav button:not(.link-btn) { width: 40px; height: 36px; border: 0; border-radius: 10px; background: var(--surface-2); font-size: 22px; line-height: 1; color: var(--text); }
+.cal-nav button:disabled { opacity: 0.3; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal-wd { text-align: center; font-size: 11px; font-weight: 600; color: var(--muted); padding-bottom: 4px; }
+.cal-cell {
+  position: relative; border: 1px solid transparent; background: var(--surface-2); border-radius: 10px;
+  min-height: 52px; padding: 4px 0 2px; display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; color: var(--text);
+}
+.cal-cell b { font-size: 13px; font-weight: 600; }
+.cal-marks { font-size: 13px; line-height: 1.2; white-space: nowrap; overflow: hidden; max-width: 100%; }
+.cal-marks small { font-size: 10px; color: var(--muted); }
+.cal-cell i { position: absolute; top: 5px; right: 5px; width: 5px; height: 5px; border-radius: 50%; background: #7c3aed; }
+.cal-cell:disabled { background: transparent; opacity: 0.35; }
+.cal-cell.today b { color: var(--surface); background: var(--text); border-radius: 999px; padding: 0 6px; }
+.cal-cell.sel { border-color: var(--text); background: var(--surface); }
+.cal-ev {
+  display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent;
+  padding: 9px 0 9px 10px; border-left: 3px solid var(--c); margin: 4px 0; color: var(--text); font-size: 15px;
+}
+.cal-ev-date { font-size: 12px; font-weight: 700; color: var(--muted); min-width: 52px; }
+.cal-ev-time { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cal-ev-title { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.cal-todo { padding: 6px 0 6px 13px; font-size: 14px; }
+.cal-actions { margin-top: 12px; gap: 8px; }
+.cal-actions .btn { flex: 1; }
+
 .tl-habit.planned, .tl-habit.paused { cursor: default; }
 .tl-habit.planned .mini-check { border-style: dashed; }
 .tl-habit.paused { opacity: 0.55; }

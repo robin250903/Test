@@ -24,6 +24,9 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
 - **Gewohnheiten im Ablauf:** Blöcke können mehrere Gewohnheiten enthalten (z. B. Kreatin in der Morgenroutine), die direkt
   in der Zeitleiste abgehakt werden. Freie Lücken lassen sich per „+ Einplanen“ nur für heute füllen; fällige, noch nicht
   eingeplante Gewohnheiten werden angezeigt
+- **Kalender:** Der 📅-Knopf am Ende der Tagesleiste öffnet eine Monatsansicht. Termine lassen sich dort auch Wochen
+  im Voraus eintragen (mit Uhrzeit, Emoji und Art); „Demnächst“ listet alle kommenden Termine. Am Tag selbst stehen sie
+  zur Uhrzeit in der Zeitleiste, und die Push-Erinnerung (morgens für heute, abends für morgen) nennt sie
 - **Eigene Termine:** Über „＋ Eigenen Termin eintragen“ (oder „+ Einplanen“ in freier Zeit) kommen einmalige Termine
   wie Arzt, Einkaufen oder Geburtstag in einen Tag – mit eigenem Emoji und einer Art, die die Farbe bestimmt. Beim Tippen
   wird ein passendes Symbol vorgeschlagen; Name, Symbol und Art lassen sich später per Tipp auf den Termin ändern
@@ -75,6 +78,7 @@ ausgeliefert werden, z. B. über GitHub Pages.
 | `app.js` | Datenhaltung, Streak-Berechnung, Rendering |
 | `tree.js` | Spielregeln und Zeichnung des Lebensbaums |
 | `plan.js` | Logik des Tagesablaufs (Tagestypen, Zeitleiste, Bereinigung, Vorlage) |
+| `calendar.js` | Kalender: Monatsansicht, Termine im Voraus, „Demnächst“ |
 | `ablauf.js` | Ansicht und Editor des Tagesablaufs |
 | `focus.js` | Fokus-Modus (Timer, Sessions) |
 | `review.js` | Tagesabschluss und Wochenrückblick |
