@@ -1,5 +1,5 @@
 // Offline-Cache für die App-Hülle. Bei Änderungen an den Dateien VERSION erhöhen.
-const VERSION = 'v15';
+const VERSION = 'v16';
 
 importScripts('tree.js', 'idb.js', 'plan.js');
 const CACHE = `gewohnheiten-${VERSION}`;
@@ -15,6 +15,7 @@ const ASSETS = [
   'calendar.js',
   'focus.js',
   'review.js',
+  'live.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-180.png',
@@ -62,8 +63,22 @@ function withPlan(msg, plan, slot) {
 
 // Der Push selbst enthält keine Daten: Der Text wird erst hier auf dem Gerät aus dem aktuellen Stand berechnet.
 self.addEventListener('push', (e) => {
-  let slot = 'evening';
-  try { slot = e.data?.json()?.slot === 'morning' ? 'morning' : 'evening'; } catch { /* leerer Push */ }
+  let data = null;
+  try { data = e.data?.json() || null; } catch { /* leerer Push */ }
+  // Ablauf live: Der Text kommt fertig mit (Ende-zu-Ende verschlüsselt). Gleicher Tag -> ersetzt die vorige Meldung,
+  // so steht auf dem Sperrbildschirm immer nur, was gerade dran ist.
+  if (data && data.type === 'live') {
+    e.waitUntil(self.registration.showNotification(String(data.title || '▶ Ablauf').slice(0, 120), {
+      body: String(data.body || '').slice(0, 400),
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
+      tag: 'live',
+      renotify: true,
+      timestamp: Number(data.at) || Date.now(),
+    }));
+    return;
+  }
+  const slot = data && data.slot === 'morning' ? 'morning' : 'evening';
   e.waitUntil((async () => {
     let msg;
     try {

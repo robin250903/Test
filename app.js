@@ -69,6 +69,7 @@ function save() {
     toast('Speichern fehlgeschlagen. Ist der Speicher voll oder privat?');
   }
   mirror();
+  if (typeof liveSchedule === 'function') liveSchedule();
 }
 
 /** Kopie für den Service Worker, damit Erinnerungen den aktuellen Stand kennen. */
@@ -604,7 +605,7 @@ function render() {
   if (currentView === 'today') renderToday();
   if (currentView === 'tree') renderTree();
   if (currentView === 'stats') renderStats();
-  if (currentView === 'settings') renderReminder();
+  if (currentView === 'settings') { renderReminder(); renderLive(); }
 }
 
 function showView(name) {
@@ -1002,6 +1003,8 @@ async function setupReminder() {
       vapid: { publicKey, privateKey },
     });
     renderReminder();
+    // Neuer Schlüssel -> Ablauf-Plan neu verschlüsseln
+    if (typeof liveSync === 'function') liveSync({ force: true }).catch(() => {});
     toast('Fast fertig: Jetzt den Code bei GitHub hinterlegen');
   } catch (err) {
     console.error(err);

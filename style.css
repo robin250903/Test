@@ -794,3 +794,9 @@ body.focus-open { overflow: hidden; }
 .step-row input { flex: 1; min-width: 0; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 10px; padding: 9px 10px; font-size: 16px; }
 .step-row button { width: 40px; flex: none; border: 1px solid var(--border); background: var(--surface-2); border-radius: 10px; font-size: 20px; color: var(--muted); }
 .step-add { margin: 6px 0 0; padding: 4px 0; display: inline-block; text-align: left; }
+
+/* Ablauf live */
+.live-ok { color: #16a34a; font-weight: 600; margin: 10px 0 4px; }
+#live-body .steps input { width: 100%; margin: 6px 0; }
+#live-body .check-row { margin-bottom: 8px; }
+#live-token { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 15px; }

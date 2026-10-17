@@ -1,0 +1,47 @@
+name: Ablauf live
+
+# Startet stündlich kurz vor der vollen Stunde und verschickt die Meldungen der kommenden Stunde
+# minutengenau (das Skript wartet bis zu den Zeitpunkten). Ist nichts geplant, endet der Lauf sofort.
+# Über "Run workflow" kommt sofort eine Test-Meldung.
+on:
+  schedule:
+    - cron: '50 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Test-Läufe getrennt, damit sie nicht hinter einem wartenden Stundenlauf hängen
+  group: live-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+
+      - name: Plan prüfen
+        id: check
+        run: node scripts/live.mjs check
+        env:
+          PUSH_CONFIG: ${{ secrets.PUSH_CONFIG }}
+          GITHUB_TOKEN: ${{ github.token }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: web-push installieren
+        if: steps.check.outputs.has == 'true'
+        run: npm install --no-save --no-audit --no-fund --prefix scripts web-push@3.6.7
+
+      - name: Meldungen verschicken
+        if: steps.check.outputs.has == 'true'
+        run: node scripts/live.mjs run
+        env:
+          PUSH_CONFIG: ${{ secrets.PUSH_CONFIG }}
+          GITHUB_TOKEN: ${{ github.token }}
+          SLOT: ${{ steps.check.outputs.slot }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}

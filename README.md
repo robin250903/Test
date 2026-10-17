@@ -50,6 +50,8 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
   zählt. Bei 0 geht der Baum ein und fällt eine Stufe zurück. Gießkannen, verdient mit 7 perfekten Tagen, retten
   einen Tag unter 50 %. Dazu eine Chronik und Warnungen auf „Heute“
 - **Erinnerungen:** Push-Benachrichtigung morgens und/oder abends mit dem Zustand deines Baums (siehe unten)
+- **Ablauf live:** Eine Benachrichtigung, sobald eine Aktivität beginnt (mit Uhrzeit, Schritten und was danach kommt),
+  auf Wunsch auch 5–30 Min vorher. Die neueste ersetzt die vorige, so zeigt der Sperrbildschirm, was gerade dran ist
 - **Viel Auswahl:** 18 Farben plus freie Farbwahl, rund 90 Symbole in 5 Kategorien
 - **Statistik:** Quote der letzten 30 Tage und Kalender-Heatmap der letzten 17 Wochen
 - **Offline & privat:** kein Konto, kein Server, alle Daten bleiben im Browser (`localStorage`)
@@ -85,6 +87,8 @@ ausgeliefert werden, z. B. über GitHub Pages.
 | `idb.js` | Kopie der Daten in IndexedDB, damit der Service Worker sie lesen kann |
 | `sw.js` | Service Worker für Offline-Betrieb und Benachrichtigungen |
 | `scripts/send-reminder.mjs`, `.github/workflows/reminder.yml` | Stündlicher GitHub-Actions-Job, der die Erinnerung verschickt |
+| `live.js` | Ablauf live: Meldungen berechnen, verschlüsselt ins Repo hochladen, Einstellungen |
+| `scripts/live.mjs`, `.github/workflows/live.yml` | Stündlicher Job, der die Meldungen der nächsten Stunde minutengenau verschickt |
 | `manifest.webmanifest`, `icons/` | App-Name und Icons für die Installation |
 
 Wer Dateien ändert, sollte `VERSION` in `sw.js` erhöhen, damit installierte Apps das Update laden.
@@ -100,6 +104,16 @@ Eine Web-App kann sich nicht selbst zu einer Uhrzeit wecken. Den Versand überni
    „morning“ oder „evening“ enthält.
    Der Text wird erst auf dem Gerät im Service Worker aus den lokalen Daten berechnet, deine Gewohnheiten
    verlassen das Handy also nie.
+
+### Ablauf live
+
+Für Meldungen zu jeder Aktivität muss GitHub wissen, wann was beginnt. Unter **Einstellungen → Ablauf live**
+bekommt die App einmalig einen Fine-grained Token (nur dieses Repo, „Contents: Read and write“). Sie berechnet die
+Meldungen der nächsten 7 Tage, verschlüsselt sie (AES-GCM, Schlüssel abgeleitet aus dem privaten VAPID-Schlüssel)
+und legt sie als `live-plan.json` im Branch `live-plan` ab – nach jeder Änderung neu. Der Workflow `Ablauf live`
+startet stündlich um :50, entschlüsselt mit `PUSH_CONFIG` und schickt die Meldungen der nächsten Stunde
+minutengenau (er wartet bis zu den Zeitpunkten und lädt den Plan jede Minute neu). Der Token liegt nur auf dem Gerät;
+wer ihn hat, kann Dateien in diesem Repo ändern – also mit Ablaufdatum anlegen und bei Verlust des Handys bei GitHub löschen.
 
 Hinweise: Auf iPhone/iPad funktioniert das nur mit der App auf dem Home-Bildschirm (ab iOS 16.4).
 Geplante Workflows laufen nur auf dem Standard-Branch und können sich bei GitHub um einige Minuten verspäten.
