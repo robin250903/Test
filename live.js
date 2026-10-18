@@ -238,7 +238,7 @@ function renderLive() {
       <ol class="steps">
         <li>Öffne <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub → Neuer Token</a>. Name z. B. <code>Gewohnheiten</code>, Ablauf z. B. 1 Jahr.</li>
         <li><b>Repository access</b>: „Only select repositories“ → <code>${esc(info.repo || 'dein Repo')}</code>.</li>
-        <li><b>Permissions</b> → Repository permissions → <b>Contents</b>: „Read and write“. Dann <b>Generate token</b> und kopieren.</li>
+        <li>Bei <b>Permissions</b> auf <b>„+ Add permissions“</b> tippen, <b>Contents</b> anhaken, dann daneben „Read-only“ auf <b>„Read and write“</b> umstellen. (Erscheint erst, wenn oben das Repo ausgewählt ist.) Dann <b>Generate token</b> und kopieren.</li>
         <li><input id="live-token" type="password" autocomplete="off" placeholder="github_pat_…" aria-label="GitHub-Token">
           <button class="btn btn-small" type="button" id="btn-live-connect">Verbinden</button></li>
       </ol>
