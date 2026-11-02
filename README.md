@@ -42,7 +42,7 @@ Ein schlanker Gewohnheits-Tracker als Web-App fürs Handy (PWA).
   Verletzung). Pausentage zählen nicht für Baum, Serien, Quote und Erinnerungen; die Zeiträume werden gespeichert
 - **To-dos:** für heute, morgen oder „diese Woche“, optional mit Uhrzeit, dazu „Liegen geblieben“. Gibt es heute To-dos,
   zählt „Alle To-dos erledigt“ für den Baum wie eine zusätzliche Gewohnheit (Wochen-To-dos zählen nicht täglich)
-- **Heute-Ansicht:** nur der heutige Tag mit Fortschrittsring. Den Vortag kann man bis 12 Uhr mittags nachtragen
+- **Heute-Ansicht:** nur der heutige Tag mit Fortschrittsring. Den Vortag kann man bis 18 Uhr nachtragen
 - **Flexible Planung:** täglich, werktags oder an beliebigen Wochentagen. Freie Tage unterbrechen keine Serie
 - **Streaks:** aktuelle und beste Serie, Meilenstein-Meldungen
 - **Lebensbaum:** Erledigte Gewohnheiten lassen einen Baum über 8 Stufen wachsen. Die Gesundheit ändert sich

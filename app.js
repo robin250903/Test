@@ -238,7 +238,7 @@ const tageWort = (n) => (n === 1 ? 'Tag' : 'Tage');
 /* ---------- Ansicht: Heute ---------- */
 
 /** Bis zu dieser Uhrzeit darf der Vortag noch nachgetragen werden. */
-const BACKFILL_UNTIL_HOUR = 12;
+const BACKFILL_UNTIL_HOUR = 18;
 const yesterdayKey = () => keyOf(addDays(parseKey(todayKey()), -1));
 const canBackfill = () => new Date().getHours() < BACKFILL_UNTIL_HOUR;
 
@@ -250,7 +250,7 @@ function yesterdayIncomplete() {
 }
 
 function renderToday() {
-  // Nachtragen ist nur für gestern und nur bis mittags möglich
+  // Nachtragen ist nur für gestern und nur bis 18 Uhr möglich
   if (selectedKey !== todayKey() && (selectedKey !== yesterdayKey() || !canBackfill())) selectedKey = todayKey();
   const sel = parseKey(selectedKey);
   const isToday = selectedKey === todayKey();
